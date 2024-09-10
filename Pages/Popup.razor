@@ -1,0 +1,15 @@
+﻿@page "/popup.html"
+@inherits BasePage
+
+<h1>Popup Page</h1>
+
+<button @onclick="ClickFirstButtonOnPage">Click First Button on Page</button>
+
+@code {
+    [Inject] IJSRuntime JS { get; set; }
+
+    private async Task ClickFirstButtonOnPage()
+    {
+        await JS.InvokeVoidAsync("executeContentScript");
+    }
+}
