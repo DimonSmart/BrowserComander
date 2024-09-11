@@ -1,19 +1,13 @@
 ﻿(function () {
-    // Locate the textarea element by its id or other attributes
-    const textarea = document.querySelector('textarea#prompt-textarea');
+    // Locate the contenteditable div by its id or other attributes
+    const editableDiv = document.querySelector('div#prompt-textarea[contenteditable="true"]');
 
-    if (textarea) {
-        console.log("Found textarea, entering text...");
+    if (editableDiv) {
+        // Set the inner HTML of the contenteditable div
+        editableDiv.innerHTML = "Hello world";
 
-        // Set the value of the textarea
-        textarea.value = "Hello world";
-
-        // Optionally, trigger the input event to simulate user typing
+        // Optionally, trigger the input event to simulate user typing if needed
         const event = new Event('input', { bubbles: true });
-        textarea.dispatchEvent(event);
-
-        console.log("Text entered into the textarea: Hello world");
-    } else {
-        console.log("Textarea not found.");
+        editableDiv.dispatchEvent(event);
     }
 })();
