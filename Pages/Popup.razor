@@ -3,13 +3,21 @@
 
 <h1>Popup Page</h1>
 
-<button @onclick="ClickFirstButtonOnPage">Click First Button on Page</button>
+<div>
+    <label for="textInput">Enter Text:</label>
+    <input id="textInput" @bind="textToSend" placeholder="Type something..." />
+</div>
+
+<button @onclick="ClickFirstButtonOnPage">Send Text</button>
 
 @code {
     [Inject] IJSRuntime JS { get; set; }
 
+    private string textToSend { get; set; }
+
     private async Task ClickFirstButtonOnPage()
     {
-        await JS.InvokeVoidAsync("executeContentScript");
+        // Ensure that the textToSend is sent to the JavaScript function
+        await JS.InvokeVoidAsync("executeContentScript", textToSend);
     }
 }

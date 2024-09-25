@@ -1,11 +1,12 @@
-﻿function executeContentScript() {
-    console.log('Attempting to inject content script');
+﻿function executeContentScript(textToType) {
+    console.log('Attempting to send message to content script');
     chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
         chrome.scripting.executeScript({
             target: { tabId: tabs[0].id },
             files: ['injectedScript.js']
         }, () => {
-            console.log('Content script injected');
+            chrome.tabs.sendMessage(tabs[0].id, { action: 'updateText', text: textToType });
+            console.log('Message sent to content script');
         });
     });
 }
