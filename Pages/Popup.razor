@@ -1,20 +1,19 @@
 ﻿@page "/popup.html"
 @inherits BasePage
 
-<h1>Popup Page</h1>
+<div class="popup-container">
+    <h1 class="popup-header">Popup Page</h1>
 
-<div>
-    <label for="textInput">Enter Text:</label>
-    <input id="textInput" @bind="textToSend" placeholder="Type something..." />
+    <form class="popup-form">
+        <label for="textInput">Enter Text:</label>
+        <input id="textInput" @bind="textToSend" placeholder="Type something..." class="styled-input" />
+
+        <label for="selectorInput">Enter Selector:</label>
+        <input id="selectorInput" @bind="selector" placeholder="Type selector..." class="styled-input" />
+
+        <button @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text</button>
+    </form>
 </div>
-
-<div>
-    <label for="textInput">Enter selector:</label>
-    <input id="textInput" @bind="selector" placeholder="Type something..." />
-</div>
-
-
-<button @onclick="ClickFirstButtonOnPage">Send Text</button>
 
 @code {
     [Inject] IJSRuntime JS { get; set; }

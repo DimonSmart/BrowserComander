@@ -12,7 +12,8 @@
   },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "options_ui": {
     "page": "options.html",
