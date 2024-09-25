@@ -8,16 +8,22 @@
     <input id="textInput" @bind="textToSend" placeholder="Type something..." />
 </div>
 
+<div>
+    <label for="textInput">Enter selector:</label>
+    <input id="textInput" @bind="selector" placeholder="Type something..." />
+</div>
+
+
 <button @onclick="ClickFirstButtonOnPage">Send Text</button>
 
 @code {
     [Inject] IJSRuntime JS { get; set; }
 
     private string textToSend { get; set; }
+    private string selector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
 
     private async Task ClickFirstButtonOnPage()
     {
-        // Ensure that the textToSend is sent to the JavaScript function
-        await JS.InvokeVoidAsync("executeContentScript", textToSend);
+        await JS.InvokeVoidAsync("executeContentScript", selector, textToSend);
     }
 }
