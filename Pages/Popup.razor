@@ -4,14 +4,14 @@
 <div class="popup-container">
     <h1 class="popup-header">Popup Page</h1>
 
-    <form class="popup-form">
+    <form class="popup-form" @onsubmit="PreventDefault">
         <label for="textInput">Enter Text:</label>
         <input id="textInput" @bind="textToSend" placeholder="Type something..." class="styled-input" />
 
         <label for="selectorInput">Enter Selector:</label>
         <input id="selectorInput" @bind="selector" placeholder="Type selector..." class="styled-input" />
 
-        <button @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text</button>
+        <button type="button" @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text</button>
     </form>
 </div>
 
@@ -24,5 +24,10 @@
     private async Task ClickFirstButtonOnPage()
     {
         await JS.InvokeVoidAsync("executeContentScript", selector, textToSend);
+    }
+
+    private void PreventDefault()
+    {
+        // This prevents the form from submitting and causing the popup to reload
     }
 }
