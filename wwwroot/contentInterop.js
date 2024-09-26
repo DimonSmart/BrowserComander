@@ -20,17 +20,18 @@ function getTextFunctionScript(selector) {
                 files: ['injectedScript.js']
             }, () => {
                 chrome.tabs.sendMessage(tabs[0].id, { action: 'getText', selector: selector }, function (response) {
-                    if (response && response.text) {
+                    if (response && response.text !== null) {
                         console.log('Text received from content script:', response.text);
                         resolve(response.text); // Return the text to Blazor
                     } else {
-                        console.warn('Failed to retrieve text or no text found');
-                        reject('Failed to retrieve text');
+                        console.warn('No text found or element not found');
+                        resolve(null);
                     }
                 });
             });
         });
     });
 }
+
 
 

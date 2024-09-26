@@ -11,12 +11,13 @@
     } else if (message.action === 'getText') {
         const editableDiv = document.querySelector(message.selector);
         if (editableDiv) {
-            sendResponse({ text: editableDiv.innerText });
+            // Retrun empty string if element found and text is empty
+            const text = editableDiv.innerText || '';
+            sendResponse({ text: text });
         } else {
-            console.warn(`Element with selector '${message.selector}' not found.`);
-            sendResponse({ error: `Element with selector '${message.selector}' not found.` });
+            // Return null if element not found
+            sendResponse({ text: null });
         }
     }
-    // Return true to indicate that sendResponse will be used asynchronously
     return true;
 });
