@@ -4,6 +4,7 @@
 <div class="popup-container">
     <h1 class="popup-header">Popup Page</h1>
 
+    <!-- Block for setting text -->
     <form class="popup-form" @onsubmit="PreventDefault">
         <label for="textInput">Enter Text:</label>
         <input id="textInput" @bind="textToSend" placeholder="Type something..." class="styled-input" />
@@ -13,6 +14,19 @@
 
         <button type="button" @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text</button>
     </form>
+
+    <hr style="width: 100%; margin: 20px 0;" />
+
+    <!-- Block for getting text -->
+    <form class="popup-form" @onsubmit="PreventDefault">
+        <label for="getSelectorInput">Enter Selector to Get Text:</label>
+        <input id="getSelectorInput" @bind="getSelector" placeholder="Type selector..." class="styled-input" />
+
+        <label for="resultText">Text Result:</label>
+        <input id="resultText" @bind="textResult" readonly placeholder="Result will appear here..." class="styled-input" />
+
+        <button type="button" @onclick="GetTextFromPage" class="styled-button">Get Text</button>
+    </form>
 </div>
 
 @code {
@@ -20,10 +34,17 @@
 
     private string textToSend { get; set; }
     private string selector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
+    private string getSelector { get; set; }
+    private string textResult { get; set; }
 
     private async Task ClickFirstButtonOnPage()
     {
-        await JS.InvokeVoidAsync("executeContentScript", selector, textToSend);
+        await JS.InvokeVoidAsync("setTextFunctionScript", selector, textToSend);
+    }
+
+    private async Task GetTextFromPage()
+    {
+        textResult = await JS.InvokeAsync<string>("getTextFunctionScript", getSelector);
     }
 
     private void PreventDefault()
