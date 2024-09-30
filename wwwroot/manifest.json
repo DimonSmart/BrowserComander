@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BrowserComander Extension",
   "description": "My browser extension built with Blazor WebAssembly",
-  "version": "0.1",
+  "version": "0.1.2",
   "background": {
     "service_worker": "content/BackgroundWorker.js",
     "type": "module"

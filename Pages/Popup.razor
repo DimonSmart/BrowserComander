@@ -10,7 +10,7 @@
         <input id="textInput" @bind="textToSend" placeholder="Type something..." class="styled-input" />
 
         <label for="selectorInput">Enter Selector:</label>
-        <input id="selectorInput" @bind="selector" placeholder="Type selector..." class="styled-input" />
+        <input id="selectorInput" @bind="setSelector" placeholder="Type selector..." class="styled-input" />
 
         <button type="button" @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text</button>
     </form>
@@ -31,20 +31,23 @@
 
 @code {
     [Inject] IJSRuntime JS { get; set; }
+    [Inject] JSInteropService JSInteropService { get; set; }
 
     private string textToSend { get; set; }
-    private string selector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
-    private string getSelector { get; set; }
+    private string setSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
+    private string getSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
     private string textResult { get; set; }
 
     private async Task ClickFirstButtonOnPage()
     {
-        await JS.InvokeVoidAsync("setTextFunctionScript", selector, textToSend);
+        await JSInteropService.SetTextAsync(setSelector, textToSend);
+        // await JS.InvokeVoidAsync("setTextFunctionScript", setSelector, textToSend);
     }
 
     private async Task GetTextFromPage()
     {
-        textResult = await JS.InvokeAsync<string>("getTextFunctionScript", getSelector);
+        // textResult = await JS.InvokeAsync<string>("getTextFunctionScript", getSelector);
+        textResult = await JSInteropService.GetTextAsync(getSelector);
     }
 
     private void PreventDefault()
