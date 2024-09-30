@@ -1,0 +1,130 @@
+﻿@page "/popup.html"
+@using Microsoft.AspNetCore.SignalR.Client
+@inherits BasePage
+@inject HubConnection HubConnection
+@implements IDisposable
+
+<div class="popup-container">
+    <h1 class="popup-header">Popup Page</h1>
+
+    @if (connectionError != null)
+    {
+        <div class="error-message">
+            <p>@connectionError</p>
+        </div>
+    }
+
+    <!-- Block for receiving commands from SignalR -->
+    <form class="popup-form" @onsubmit="PreventDefault">
+        <label for="receivedCommands">Received Commands:</label>
+        <textarea id="receivedCommands" @bind="receivedCommand" readonly placeholder="Commands will appear here..." class="styled-input" style="height: 100px;"></textarea>
+    </form>
+
+    <!-- Block for sending text to the SignalR server -->
+    <form class="popup-form" @onsubmit="PreventDefault">
+        <label for="serverTextInput">Enter Text to Send to Server:</label>
+        <input id="serverTextInput" @bind="textToSendToServer" placeholder="Type something to send to server..." class="styled-input" />
+
+        <button type="button" @onclick="SendTextToServer" class="styled-button">Send Text to Server</button>
+    </form>
+
+    <hr style="width: 100%; margin: 20px 0;" />
+
+    <!-- Block for sending text to the page -->
+    <form class="popup-form" @onsubmit="PreventDefault">
+        <label for="pageTextInput">Enter Text to Send to Page:</label>
+        <input id="pageTextInput" @bind="textToSendToPage" placeholder="Type something to send to page..." class="styled-input" />
+
+        <label for="selectorInput">Enter Selector:</label>
+        <input id="selectorInput" @bind="setSelector" placeholder="Type selector..." class="styled-input" />
+
+        <button type="button" @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text to Page</button>
+    </form>
+
+    <hr style="width: 100%; margin: 20px 0;" />
+
+    <!-- Block for getting text from the page -->
+    <form class="popup-form" @onsubmit="PreventDefault">
+        <label for="getSelectorInput">Enter Selector to Get Text:</label>
+        <input id="getSelectorInput" @bind="getSelector" placeholder="Type selector..." class="styled-input" />
+
+        <label for="resultText">Text Result:</label>
+        <input id="resultText" @bind="textResult" readonly placeholder="Result will appear here..." class="styled-input" />
+
+        <button type="button" @onclick="GetTextFromPage" class="styled-button">Get Text</button>
+    </form>
+</div>
+
+@code {
+    [Inject] IJSRuntime JS { get; set; }
+    [Inject] JSInteropService JSInteropService { get; set; }
+
+    // Separate text for server and page
+    private string textToSendToServer { get; set; }
+    private string textToSendToPage { get; set; }
+
+    // Selectors and other fields
+    private string setSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
+    private string getSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
+    private string textResult { get; set; }
+    private string receivedCommand { get; set; } = string.Empty;
+    private string connectionError { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            HubConnection.On<string>("ReceiveCommand", (command) =>
+            {
+                receivedCommand = command;
+                InvokeAsync(StateHasChanged);
+            });
+
+            if (HubConnection.State == HubConnectionState.Disconnected)
+            {
+                await HubConnection.StartAsync();
+                connectionError = null; // Reset error message on successful connection
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            connectionError = "Failed to connect to SignalR server: " + ex.Message;
+        }
+        catch (Exception ex)
+        {
+            connectionError = "An error occurred: " + ex.Message;
+        }
+    }
+
+    private async Task SendTextToServer()
+    {
+        if (HubConnection.State == HubConnectionState.Connected)
+        {
+            await HubConnection.SendAsync("SendCommand", textToSendToServer);
+        }
+        else
+        {
+            connectionError = "Unable to send text, no SignalR connection.";
+        }
+    }
+
+    private async Task ClickFirstButtonOnPage()
+    {
+        await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
+    }
+
+    private async Task GetTextFromPage()
+    {
+        textResult = await JSInteropService.GetTextAsync(getSelector);
+    }
+
+    private void PreventDefault()
+    {
+        // Prevent the form from submitting and causing the popup to reload
+    }
+
+    public void Dispose()
+    {
+        HubConnection?.DisposeAsync();
+    }
+}

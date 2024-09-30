@@ -1,7 +1,7 @@
 ﻿using Blazor.BrowserExtension;
 using System.Threading.Tasks;
 
-namespace BrowserComander
+namespace BrowserCommander
 {
     public partial class BackgroundWorker : BackgroundWorkerBase
     {
@@ -9,6 +9,8 @@ namespace BrowserComander
         public override void Main()
         {
             WebExtensions.Runtime.OnInstalled.AddListener(OnInstalled);
+
+
         }
 
         async Task OnInstalled()

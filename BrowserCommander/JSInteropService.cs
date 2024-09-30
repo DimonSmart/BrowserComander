@@ -1,7 +1,7 @@
 ﻿using Microsoft.JSInterop;
 using System.Threading.Tasks;
 
-namespace BrowserComander
+namespace BrowserCommander
 {
     public class JSInteropService
     {
