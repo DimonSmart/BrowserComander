@@ -17,8 +17,9 @@ namespace BrowserCommander
             
             builder.Services.AddSingleton<HubConnection>(sp =>
             {
+                var signalRurl = builder.HostEnvironment.BaseAddress + "browserCommanderHub";
                 return new HubConnectionBuilder()
-                    .WithUrl(builder.HostEnvironment.BaseAddress + "hubs/command")
+                    .WithUrl(signalRurl)
                     .WithAutomaticReconnect()
                     .Build();
             });
