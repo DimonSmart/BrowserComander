@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Hosting;
 
 namespace BrowserCommanderServer
 {
@@ -28,6 +29,9 @@ namespace BrowserCommanderServer
             });
 
             services.AddSingleton<ITextStore, InMemoryTextStore>();
+
+            // Register the TimeBroadcastService as a hosted service
+            services.AddHostedService<TimeBroadcastService>();
         }
 
         public void Configure(IApplicationBuilder app)

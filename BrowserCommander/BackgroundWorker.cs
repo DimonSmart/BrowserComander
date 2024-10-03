@@ -41,6 +41,12 @@ namespace BrowserCommander
                     await HandleCommandAsync(command);
                 });
 
+                HubConnection.On<string>("ReceiveTime", (currentTime) =>
+                {
+                    Logger.LogInformation($"Current server time: {currentTime}");
+                    Console.WriteLine($"Current server time: {currentTime}");
+                });
+
                 await HubConnection.StartAsync();
                 Logger.LogInformation("SignalR connection started.");
             }
