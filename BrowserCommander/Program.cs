@@ -6,15 +6,27 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Configuration;
 
 namespace BrowserCommander
 {
+
+
     public static class Program
     {
         public static async Task Main(string[] args)
         {
-            var builder = WebAssemblyHostBuilder.CreateDefault(args);
-            
+              var builder = WebAssemblyHostBuilder.CreateDefault(args);
+
+            builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
+
+            // Load configuration
+            var serverAddress = builder.Configuration.GetSection("ServerSettings:ServerAddress").Value;
+
+            builder.Services.AddSingleton(new BrowserCommanderConfig { ServerAddress = serverAddress });
+
+
             builder.Services.AddSingleton<HubConnection>(sp =>
             {
                 var signalRurl = builder.HostEnvironment.BaseAddress + "browserCommanderHub";

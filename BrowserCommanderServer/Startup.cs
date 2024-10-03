@@ -38,9 +38,6 @@ namespace BrowserCommanderServer
 
             app.UseEndpoints(endpoints =>
             {
-                // REST API Endpoints
-
-                // Endpoint to get text
                 endpoints.MapGet("/getText", async context =>
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
@@ -69,7 +66,6 @@ namespace BrowserCommanderServer
                     }
                 });
 
-                // Endpoint to set text
                 endpoints.MapPost("/setText", async context =>
                 {
                     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();

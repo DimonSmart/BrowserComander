@@ -1,11 +1,13 @@
 ﻿@page "/popup.html"
 @using Microsoft.AspNetCore.SignalR.Client
 @inherits BasePage
+@inject BrowserCommanderConfig ServerConfig
 @inject HubConnection HubConnection
 @implements IDisposable
 
 <div class="popup-container">
     <h1 class="popup-header">Popup Page</h1>
+    <p>Server Address: @ServerConfig.ServerAddress</p>
 
     @if (connectionError != null)
     {
