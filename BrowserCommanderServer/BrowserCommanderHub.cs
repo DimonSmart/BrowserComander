@@ -13,11 +13,30 @@ namespace BrowserCommanderServer
             _textStore = textStore;
         }
 
+        public override async Task OnConnectedAsync()
+        {
+            _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
+            await base.OnConnectedAsync();
+        }
+
+        public override async Task OnDisconnectedAsync(Exception? exception)
+        {
+            if (exception != null)
+            {
+                _logger.LogWarning(exception, "Client disconnected due to an error: {ConnectionId}", Context.ConnectionId);
+            }
+            else
+            {
+                _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
+            }
+            await base.OnDisconnectedAsync(exception);
+        }
+
         public async Task SetText(string setSelector, string text)
         {
             _textStore.Texts[setSelector] = text;
 
-            _logger.LogInformation("SetText called with setSelector: {setSelector}, text: {text}", setSelector, text);
+            _logger.LogInformation("SetText called with setSelector: {SetSelector}, text: {Text}", setSelector, text);
 
             await Clients.Others.SendAsync("TextSet", setSelector, text);
         }
@@ -33,7 +52,7 @@ namespace BrowserCommanderServer
                 await Clients.Caller.SendAsync("ReceiveText", null);
             }
 
-            _logger.LogInformation("GetText called with getLocator: {getLocator}", getLocator);
+            _logger.LogInformation("GetText called with getLocator: {GetLocator}", getLocator);
         }
     }
 }

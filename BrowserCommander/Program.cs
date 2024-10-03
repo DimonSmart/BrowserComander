@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
+using System.IO;
 
 namespace BrowserCommander
 {
@@ -16,20 +17,15 @@ namespace BrowserCommander
     {
         public static async Task Main(string[] args)
         {
-              var builder = WebAssemblyHostBuilder.CreateDefault(args);
-
+            var builder = WebAssemblyHostBuilder.CreateDefault(args);
             builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-
-
-            // Load configuration
             var serverAddress = builder.Configuration.GetSection("ServerSettings:ServerAddress").Value;
 
             builder.Services.AddSingleton(new BrowserCommanderConfig { ServerAddress = serverAddress });
 
-
             builder.Services.AddSingleton<HubConnection>(sp =>
             {
-                var signalRurl = builder.HostEnvironment.BaseAddress + "browserCommanderHub";
+                var signalRurl = Path.Combine(serverAddress, "browserCommanderHub");
                 return new HubConnectionBuilder()
                     .WithUrl(signalRurl)
                     .WithAutomaticReconnect()
