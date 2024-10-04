@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
 using System.IO;
+using BrowserCommander.Pages;
 
 namespace BrowserCommander
 {
@@ -34,6 +35,16 @@ namespace BrowserCommander
 
             builder.UseBrowserExtension(browserExtension =>
             {
+                // if (browserExtension.Mode == BrowserExtensionMode.ContentScript)
+                // {
+                //     builder.RootComponents.Add<ContentScript>("#SidebarUsingContentScriptsSampleApp");
+                // }
+
+              //  if (browserExtension.Mode == BrowserExtensionMode.ContentScript)
+              //  {
+              //      builder.RootComponents.Add<ContentScript>("#Browser_Commander_app");
+              //  }
+
                 if (browserExtension.Mode == BrowserExtensionMode.Background)
                 {
                     builder.RootComponents.AddBackgroundWorker<BackgroundWorker>();
@@ -45,10 +56,9 @@ namespace BrowserCommander
                 }
             });
 
-            builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-
+            builder.Services.AddWebExtensions();
             builder.Services.AddScoped<JSInteropService>();
-
+            builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
             await builder.Build().RunAsync();
         }
     }

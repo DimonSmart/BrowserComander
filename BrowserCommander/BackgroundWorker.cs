@@ -60,17 +60,17 @@ namespace BrowserCommander
                 {
                     Logger.LogInformation($"Current server time: {currentTime}");
 
-                    try
-                    {
-                        var selector = "div#prompt-textarea[contenteditable=\"true\"]";
-                        var result = await JSInteropService.GetTextAsync(selector);
-                        Logger.LogInformation($"Field:{result}");
-
-                    }
-                    catch (Exception exception)
-                    {
-                        Logger.LogInformation($"Exception: {exception}");
-                    }
+                //    try
+                //    {
+                //        var selector = "div#prompt-textarea[contenteditable=\"true\"]";
+                //        var result = await JSInteropService.GetTextAsync(selector);
+                //        Logger.LogInformation($"Field:{result}");
+                //
+                //    }
+                //    catch (Exception exception)
+                //    {
+                //        Logger.LogInformation($"Exception: {exception}");
+                //    }
                 });
 
                 await HubConnection.StartAsync();
@@ -100,7 +100,7 @@ namespace BrowserCommander
 
         async Task OnInstalled()
         {
-            var indexPageUrl = await WebExtensions.Runtime.GetURL("index.html");
+            var indexPageUrl = WebExtensions.Runtime.GetURL("index.html");
             await WebExtensions.Tabs.Create(new()
             {
                 Url = indexPageUrl

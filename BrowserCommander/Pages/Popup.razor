@@ -3,6 +3,13 @@
 @inherits BasePage
 @inject BrowserCommanderConfig ServerConfig
 @inject HubConnection HubConnection
+@using WebExtensions.Net.Runtime
+
+@* @inject WebExtensions.Net.IWebExtensionsApi WebExtensions *@
+@* @inject WebExtensions.Net.Tabs.ITabsApi TabsApi *@
+@* @inject WebExtensions.Net.Runtime.IRuntimeApi RuntimeApi *@
+
+
 @implements IDisposable
 
 <div class="popup-container">
@@ -71,9 +78,17 @@
     private string textResult { get; set; }
     private string receivedCommand { get; set; } = string.Empty;
     private string connectionError { get; set; }
+    int? activeTabId;
 
     protected override async Task OnInitializedAsync()
     {
+        await base.OnInitializedAsync();
+        activeTabId = (await WebExtensions.Tabs.Query(new()
+            {
+                Active = true,
+                CurrentWindow = true
+            })).SingleOrDefault()?.Id;
+
         try
         {
             HubConnection.On<string>("ReceiveCommand", (command) =>
@@ -112,7 +127,16 @@
 
     private async Task ClickFirstButtonOnPage()
     {
-        await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
+        var message = new
+        {
+            action = "updateText",
+            selector = setSelector,
+            text = textToSendToPage
+        };
+
+        await this.WebExtensions.Tabs.SendMessage(activeTabId.Value, message);
+
+        // await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
     }
 
     private async Task GetTextFromPage()
