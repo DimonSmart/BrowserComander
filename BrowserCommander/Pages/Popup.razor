@@ -1,45 +1,55 @@
-﻿@page "/popup.html"
-@using Microsoft.AspNetCore.SignalR.Client
+@page "/popup.html"
+@using BrowserCommander.Contracts
 @inherits BasePage
 @inject BrowserCommanderConfig ServerConfig
-@inject HubConnection HubConnection
 @using WebExtensions.Net.Runtime
 
-@* @inject WebExtensions.Net.IWebExtensionsApi WebExtensions *@
-@* @inject WebExtensions.Net.Tabs.ITabsApi TabsApi *@
-@* @inject WebExtensions.Net.Runtime.IRuntimeApi RuntimeApi *@
-
-
-@implements IDisposable
-
 <div class="popup-container">
-    <h1 class="popup-header">Popup Page</h1>
+    <h1 class="popup-header">BrowserCommander</h1>
     <p>Server Address: @ServerConfig.ServerAddress</p>
+    <p>Agent Id: @agentId</p>
+    <p>Background: @(backgroundConnected ? "connected" : "disconnected")</p>
 
-    @if (connectionError != null)
+    @if (!string.IsNullOrEmpty(connectionError))
     {
         <div class="error-message">
             <p>@connectionError</p>
         </div>
     }
 
-    <!-- Block for receiving commands from SignalR -->
+    <hr style="width: 100%; margin: 20px 0;" />
+
+    <div class="popup-form">
+        <label>Current Tab:</label>
+        <textarea readonly class="styled-input" style="height: 70px;">@currentTabSummary</textarea>
+        <p>Access: @(activeTabAuthorized ? "authorized" : "not authorized")</p>
+
+        <button type="button" @onclick="AuthorizeCurrentTabAsync" class="styled-button">Authorize Current Tab</button>
+        <button type="button" @onclick="RevokeCurrentTabAsync" class="styled-button">Revoke Current Tab</button>
+        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear Authorized Tabs</button>
+    </div>
+
+    <div class="popup-form">
+        <label for="allowedTabs">Authorized Tabs:</label>
+        <textarea id="allowedTabs" readonly class="styled-input" style="height: 100px;">@authorizedTabsSummary</textarea>
+    </div>
+
+    <hr style="width: 100%; margin: 20px 0;" />
+
     <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="receivedCommands">Received Commands:</label>
-        <textarea id="receivedCommands" @bind="receivedCommand" readonly placeholder="Commands will appear here..." class="styled-input" style="height: 100px;"></textarea>
+        <label for="receivedCommands">Last Server Response:</label>
+        <textarea id="receivedCommands" @bind="receivedCommand" readonly placeholder="Server responses will appear here..." class="styled-input" style="height: 100px;"></textarea>
     </form>
 
-    <!-- Block for sending text to the SignalR server -->
     <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="serverTextInput">Enter Text to Send to Server:</label>
-        <input id="serverTextInput" @bind="textToSendToServer" placeholder="Type something to send to server..." class="styled-input" />
+        <label for="serverTextInput">Enter Text to Send via Server:</label>
+        <input id="serverTextInput" @bind="textToSendToServer" placeholder="Type something to send through the server..." class="styled-input" />
 
-        <button type="button" @onclick="SendTextToServer" class="styled-button">Send Text to Server</button>
+        <button type="button" @onclick="SendTextToServer" class="styled-button">Send via Server</button>
     </form>
 
     <hr style="width: 100%; margin: 20px 0;" />
 
-    <!-- Block for sending text to the page -->
     <form class="popup-form" @onsubmit="PreventDefault">
         <label for="pageTextInput">Enter Text to Send to Page:</label>
         <input id="pageTextInput" @bind="textToSendToPage" placeholder="Type something to send to page..." class="styled-input" />
@@ -52,7 +62,6 @@
 
     <hr style="width: 100%; margin: 20px 0;" />
 
-    <!-- Block for getting text from the page -->
     <form class="popup-form" @onsubmit="PreventDefault">
         <label for="getSelectorInput">Enter Selector to Get Text:</label>
         <input id="getSelectorInput" @bind="getSelector" placeholder="Type selector..." class="styled-input" />
@@ -65,47 +74,86 @@
 </div>
 
 @code {
-    [Inject] IJSRuntime JS { get; set; }
-    [Inject] JSInteropService JSInteropService { get; set; }
+    [Inject] JSInteropService JSInteropService { get; set; } = default!;
 
-    // Separate text for server and page
-    private string textToSendToServer { get; set; }
-    private string textToSendToPage { get; set; }
-
-    // Selectors and other fields
+    private string textToSendToServer { get; set; } = string.Empty;
+    private string textToSendToPage { get; set; } = string.Empty;
     private string setSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
     private string getSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
-    private string textResult { get; set; }
+    private string textResult { get; set; } = string.Empty;
     private string receivedCommand { get; set; } = string.Empty;
-    private string connectionError { get; set; }
-    int? activeTabId;
+    private string connectionError { get; set; } = string.Empty;
+    private string agentId { get; set; } = string.Empty;
+    private bool backgroundConnected { get; set; }
+    private int? activeTabId;
+    private string currentTabSummary { get; set; } = "No active tab.";
+    private string authorizedTabsSummary { get; set; } = "No tabs are authorized.";
+    private bool activeTabAuthorized { get; set; }
+    private List<BrowserTabDescriptor> authorizedTabs { get; set; } = [];
 
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
-        activeTabId = (await WebExtensions.Tabs.Query(new()
-            {
-                Active = true,
-                CurrentWindow = true
-            })).SingleOrDefault()?.Id;
+        await RefreshActiveTabAsync();
+        await RefreshBackgroundStatusAsync();
+    }
+
+    private async Task SendTextToServer()
+    {
+        if (!backgroundConnected || string.IsNullOrWhiteSpace(agentId))
+        {
+            await RefreshBackgroundStatusAsync();
+        }
+
+        if (!backgroundConnected || string.IsNullOrWhiteSpace(agentId))
+        {
+            AppendError("Background agent is not connected.");
+            return;
+        }
+
+        if (!activeTabId.HasValue)
+        {
+            AppendError("Unable to send text, no active tab is available.");
+            return;
+        }
+
+        if (!activeTabAuthorized)
+        {
+            AppendError("Authorize the current tab before sending server commands.");
+            return;
+        }
 
         try
         {
-            HubConnection.On<string>("ReceiveCommand", (command) =>
+            using var httpClient = new HttpClient
             {
-                receivedCommand = command;
-                InvokeAsync(StateHasChanged);
-            });
+                BaseAddress = new Uri(ServerConfig.ServerAddress)
+            };
 
-            if (HubConnection.State == HubConnectionState.Disconnected)
-            {
-                await HubConnection.StartAsync();
-                connectionError = null; // Reset error message on successful connection
-            }
+            var response = await httpClient.PostAsJsonAsync(
+                "api/browser-automation/set-text",
+                new
+                {
+                    agentId,
+                    tabId = activeTabId.Value,
+                    selector = setSelector,
+                    text = textToSendToServer
+                });
+
+            var result = await response.Content.ReadFromJsonAsync<BrowserAutomationResult>();
+            connectionError = response.IsSuccessStatusCode
+                ? string.Empty
+                : $"Server returned {(int)response.StatusCode}.";
+
+            receivedCommand = result is null
+                ? "Server returned an empty response."
+                : result.Success
+                    ? $"setText succeeded for tab {result.TabId}."
+                    : $"error[{result.ErrorCode}]: {result.Error}";
         }
         catch (HttpRequestException ex)
         {
-            connectionError = "Failed to connect to SignalR server: " + ex.Message;
+            connectionError = "Failed to call server API: " + ex.Message;
         }
         catch (Exception ex)
         {
@@ -113,44 +161,122 @@
         }
     }
 
-    private async Task SendTextToServer()
-    {
-        if (HubConnection.State == HubConnectionState.Connected)
-        {
-            await HubConnection.SendAsync("SendCommand", textToSendToServer);
-        }
-        else
-        {
-            connectionError = "Unable to send text, no SignalR connection.";
-        }
-    }
-
     private async Task ClickFirstButtonOnPage()
     {
-        var message = new
-        {
-            action = "updateText",
-            selector = setSelector,
-            text = textToSendToPage
-        };
-
-        await this.WebExtensions.Tabs.SendMessage(activeTabId.Value, message);
-
-        // await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
+        await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
     }
 
     private async Task GetTextFromPage()
     {
-        textResult = await JSInteropService.GetTextAsync(getSelector);
+        textResult = await JSInteropService.GetTextAsync(getSelector) ?? string.Empty;
     }
 
     private void PreventDefault()
     {
-        // Prevent the form from submitting and causing the popup to reload
     }
 
-    public void Dispose()
+    private async Task RefreshActiveTabAsync()
     {
-        HubConnection?.DisposeAsync();
+        var activeTab = (await WebExtensions.Tabs.Query(new()
+        {
+            Active = true,
+            CurrentWindow = true
+        })).SingleOrDefault();
+
+        activeTabId = activeTab?.Id;
+
+        if (!activeTabId.HasValue)
+        {
+            currentTabSummary = "No active tab.";
+            activeTabAuthorized = false;
+            return;
+        }
+
+        currentTabSummary = $"[{activeTabId}] {activeTab?.Title}\n{activeTab?.Url}";
+        UpdateActiveTabAuthorizationState();
+    }
+
+    private async Task RefreshBackgroundStatusAsync()
+    {
+        var status = await JSInteropService.GetBackgroundAgentStatusAsync();
+        ApplyBackgroundStatus(status);
+    }
+
+    private async Task AuthorizeCurrentTabAsync()
+    {
+        if (!activeTabId.HasValue)
+        {
+            AppendError("No active tab is available.");
+            return;
+        }
+
+        var status = await JSInteropService.AuthorizeTabAsync(activeTabId.Value);
+        ApplyBackgroundStatus(status);
+    }
+
+    private async Task RevokeCurrentTabAsync()
+    {
+        if (!activeTabId.HasValue)
+        {
+            AppendError("No active tab is available.");
+            return;
+        }
+
+        var status = await JSInteropService.RevokeTabAsync(activeTabId.Value);
+        ApplyBackgroundStatus(status);
+    }
+
+    private async Task ClearAuthorizedTabsAsync()
+    {
+        var status = await JSInteropService.ClearAuthorizedTabsAsync();
+        ApplyBackgroundStatus(status);
+    }
+
+    private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
+    {
+        if (status is null)
+        {
+            backgroundConnected = false;
+            agentId = string.Empty;
+            authorizedTabs = [];
+            authorizedTabsSummary = "No tabs are authorized.";
+            AppendError("Background agent did not respond.");
+            UpdateActiveTabAuthorizationState();
+            return;
+        }
+
+        backgroundConnected = status.Ok && status.Connected;
+        agentId = status.AgentId;
+        authorizedTabs = status.AllowedTabs ?? [];
+        authorizedTabsSummary = authorizedTabs.Count == 0
+            ? "No tabs are authorized."
+            : string.Join(
+                "\n\n",
+                authorizedTabs.Select(tab => $"[{tab.TabId}] {tab.Title}\n{tab.Url}"));
+
+        UpdateActiveTabAuthorizationState();
+
+        if (!status.Ok && !string.IsNullOrWhiteSpace(status.Error))
+        {
+            AppendError(status.Error);
+        }
+    }
+
+    private void UpdateActiveTabAuthorizationState()
+    {
+        activeTabAuthorized = activeTabId.HasValue
+            && authorizedTabs.Any(tab => tab.TabId == activeTabId.Value);
+    }
+
+    private void AppendError(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        connectionError = string.IsNullOrWhiteSpace(connectionError)
+            ? message
+            : $"{connectionError} {message}";
     }
 }

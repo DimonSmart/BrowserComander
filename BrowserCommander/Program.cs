@@ -1,65 +1,44 @@
-﻿using Blazor.BrowserExtension;
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Blazor.BrowserExtension;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Configuration;
-using System.IO;
-using BrowserCommander.Pages;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace BrowserCommander
+namespace BrowserCommander;
+
+public static class Program
 {
-
-
-    public static class Program
+    public static async Task Main(string[] args)
     {
-        public static async Task Main(string[] args)
+        var builder = WebAssemblyHostBuilder.CreateDefault(args);
+        builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
+        var serverAddress = builder.Configuration.GetSection("ServerSettings:ServerAddress").Value ?? string.Empty;
+
+        builder.Services.AddSingleton(new BrowserCommanderConfig
         {
-            var builder = WebAssemblyHostBuilder.CreateDefault(args);
-            builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-            var serverAddress = builder.Configuration.GetSection("ServerSettings:ServerAddress").Value;
+            ServerAddress = serverAddress
+        });
 
-            builder.Services.AddSingleton(new BrowserCommanderConfig { ServerAddress = serverAddress });
-
-            builder.Services.AddSingleton<HubConnection>(sp =>
+        builder.UseBrowserExtension(browserExtension =>
+        {
+            if (browserExtension.Mode != BrowserExtensionMode.Background)
             {
-                var signalRurl = Path.Combine(serverAddress, "browserCommanderHub");
-                return new HubConnectionBuilder()
-                    .WithUrl(signalRurl)
-                    .WithAutomaticReconnect()
-                    .Build();
-            });
+                builder.RootComponents.Add<App>("#app");
+                builder.RootComponents.Add<HeadOutlet>("head::after");
+            }
+        });
 
-            builder.UseBrowserExtension(browserExtension =>
-            {
-                // if (browserExtension.Mode == BrowserExtensionMode.ContentScript)
-                // {
-                //     builder.RootComponents.Add<ContentScript>("#SidebarUsingContentScriptsSampleApp");
-                // }
+        builder.Services.AddWebExtensions();
+        builder.Services.AddScoped<JSInteropService>();
+        builder.Services.AddScoped(_ => new HttpClient
+        {
+            BaseAddress = new Uri(builder.HostEnvironment.BaseAddress)
+        });
 
-              //  if (browserExtension.Mode == BrowserExtensionMode.ContentScript)
-              //  {
-              //      builder.RootComponents.Add<ContentScript>("#Browser_Commander_app");
-              //  }
-
-                if (browserExtension.Mode == BrowserExtensionMode.Background)
-                {
-                    builder.RootComponents.AddBackgroundWorker<BackgroundWorker>();
-                }
-                else
-                {
-                    builder.RootComponents.Add<App>("#app");
-                    builder.RootComponents.Add<HeadOutlet>("head::after");
-                }
-            });
-
-            builder.Services.AddWebExtensions();
-            builder.Services.AddScoped<JSInteropService>();
-            builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
-            await builder.Build().RunAsync();
-        }
+        await builder.Build().RunAsync();
     }
 }

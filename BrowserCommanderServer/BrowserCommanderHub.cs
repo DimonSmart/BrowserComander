@@ -1,58 +1,58 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using BrowserCommander.Contracts;
+using Microsoft.AspNetCore.SignalR;
 
-namespace BrowserCommanderServer
+namespace BrowserCommanderServer;
+
+public class BrowserCommanderHub : Hub
 {
-    public class BrowserCommanderHub : Hub
+    private readonly ILogger<BrowserCommanderHub> _logger;
+    private readonly IBrowserAutomationService _browserAutomationService;
+
+    public BrowserCommanderHub(
+        ILogger<BrowserCommanderHub> logger,
+        IBrowserAutomationService browserAutomationService)
     {
-        private readonly ILogger<BrowserCommanderHub> _logger;
-        private readonly ITextStore _textStore;
+        _logger = logger;
+        _browserAutomationService = browserAutomationService;
+    }
 
-        public BrowserCommanderHub(ILogger<BrowserCommanderHub> logger, ITextStore textStore)
+    public override async Task OnConnectedAsync()
+    {
+        _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        _browserAutomationService.RemoveConnection(Context.ConnectionId);
+
+        if (exception != null)
         {
-            _logger = logger;
-            _textStore = textStore;
+            _logger.LogWarning(exception, "Client disconnected due to an error: {ConnectionId}", Context.ConnectionId);
+        }
+        else
+        {
+            _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
         }
 
-        public override async Task OnConnectedAsync()
-        {
-            _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
-            await base.OnConnectedAsync();
-        }
+        await base.OnDisconnectedAsync(exception);
+    }
 
-        public override async Task OnDisconnectedAsync(Exception? exception)
-        {
-            if (exception != null)
-            {
-                _logger.LogWarning(exception, "Client disconnected due to an error: {ConnectionId}", Context.ConnectionId);
-            }
-            else
-            {
-                _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
-            }
-            await base.OnDisconnectedAsync(exception);
-        }
+    public Task RegisterAgent(BrowserAgentRegistration registration)
+    {
+        _browserAutomationService.RegisterAgent(Context.ConnectionId, registration);
+        return Task.CompletedTask;
+    }
 
-        public async Task SetText(string setSelector, string text)
-        {
-            _textStore.Texts[setSelector] = text;
+    public Task UpdateTabs(BrowserAgentTabsUpdate update)
+    {
+        _browserAutomationService.UpdateTabs(Context.ConnectionId, update);
+        return Task.CompletedTask;
+    }
 
-            _logger.LogInformation("SetText called with setSelector: {SetSelector}, text: {Text}", setSelector, text);
-
-            await Clients.Others.SendAsync("TextSet", setSelector, text);
-        }
-
-        public async Task GetText(string getLocator)
-        {
-            if (_textStore.Texts.TryGetValue(getLocator, out var text))
-            {
-                await Clients.Caller.SendAsync("ReceiveText", text);
-            }
-            else
-            {
-                await Clients.Caller.SendAsync("ReceiveText", null);
-            }
-
-            _logger.LogInformation("GetText called with getLocator: {GetLocator}", getLocator);
-        }
+    public Task CompleteCommand(BrowserAutomationResult result)
+    {
+        _browserAutomationService.CompleteCommand(Context.ConnectionId, result);
+        return Task.CompletedTask;
     }
 }

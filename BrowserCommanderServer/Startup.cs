@@ -10,7 +10,13 @@
                 logging.AddConsole();
             });
 
-            services.AddSignalR();
+            services.AddSignalR(options =>
+            {
+                // page_content can return full HTML for large SPA pages, which easily exceeds
+                // SignalR's default 32 KB incoming message limit and causes the hub connection
+                // to be dropped before CompleteCommand is processed.
+                options.MaximumReceiveMessageSize = 8 * 1024 * 1024;
+            });
 
             services.AddCors(options =>
             {
@@ -24,7 +30,11 @@
                 });
             });
 
-            services.AddSingleton<ITextStore, InMemoryTextStore>();
+            services.AddMcpServer()
+                .WithHttpTransport()
+                .WithToolsFromAssembly(typeof(BrowserAutomationMcpTools).Assembly);
+
+            services.AddSingleton<IBrowserAutomationService, BrowserAutomationService>();
             services.AddHostedService<TimeBroadcastService>();
             services.AddControllers();
         }
@@ -39,6 +49,7 @@
             {
                 endpoints.MapControllers();
                 endpoints.MapHub<BrowserCommanderHub>("/browserCommanderHub");
+                endpoints.MapMcp("/mcp");
             });
         }
     }

@@ -1,7 +1,6 @@
-﻿namespace BrowserCommander
+namespace BrowserCommander;
+
+public class BrowserCommanderConfig
 {
-    public class BrowserCommanderConfig
-    {
-        public string ServerAddress { get; set; }
-    }
+    public string ServerAddress { get; set; } = string.Empty;
 }

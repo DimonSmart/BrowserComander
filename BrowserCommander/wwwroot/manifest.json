@@ -4,7 +4,7 @@
   "description": "My browser extension built with Blazor WebAssembly",
   "version": "0.1.2",
   "background": {
-    "service_worker": "content/BackgroundWorker.js",
+    "service_worker": "background-agent.js",
     "type": "module"
   },
   "action": {
@@ -12,8 +12,13 @@
   },
   "permissions": [
     "activeTab",
+    "debugger",
     "scripting",
+    "storage",
     "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "options_ui": {
     "page": "options.html",
@@ -33,6 +38,7 @@
       "resources": [
         "framework/*",
         "content/*",
+        "background-agent.js",
         "injectedScript.js"
       ],
       "matches": [ "<all_urls>" ]
