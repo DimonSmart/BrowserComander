@@ -64,7 +64,7 @@ Each release tag `vX.Y.Z` publishes exactly these files:
 - `BrowserCommander.McpStdioBridge/`
   Stdio proxy for MCP clients that expect stdio instead of HTTP.
 - `distribution/bundle/`
-  Files copied into the portable bundle, including `README.txt` and MCP config examples.
+  Files copied into the portable bundle, including `README.txt` and MCP config examples for local clients and temporary ChatGPT remote testing.
 
 ### Release scripts
 

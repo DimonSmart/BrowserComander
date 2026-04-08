@@ -62,6 +62,22 @@
             <p>If your client supports HTTP MCP directly, you do not need the stdio bridge.</p>
         </section>
 
+        <section class="content-card">
+            <h2>Temporary remote access for ChatGPT</h2>
+            <p>
+                ChatGPT developer mode currently requires a remote MCP server URL. To test BrowserCommander from
+                ChatGPT while the server still runs on your own machine, place a temporary HTTPS tunnel in front of
+                <span class="mono">http://localhost:5082</span>.
+            </p>
+            <pre>devtunnel user login
+devtunnel host -p 5082 --allow-anonymous</pre>
+            <p>
+                Copy the tunnel URL shown by Dev Tunnels, append <span class="mono">/mcp</span>, and use that full URL
+                in the ChatGPT app draft form. Detailed field mapping and security notes are on
+                <a href="mcp-config.html">MCP config examples</a>.
+            </p>
+        </section>
+
         <footer class="footer">
             <p><a href="mcp-config.html">MCP config examples</a> | <a href="install-extension.html">Install extension</a></p>
         </footer>

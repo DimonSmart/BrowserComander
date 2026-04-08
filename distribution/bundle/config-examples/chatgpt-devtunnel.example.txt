@@ -1,0 +1,40 @@
+ChatGPT remote test access through Microsoft Dev Tunnels
+
+Purpose
+- Make the local BrowserCommander MCP endpoint temporarily reachable from ChatGPT developer mode.
+
+Local prerequisites
+1. Start BrowserCommanderServer.exe locally.
+2. Keep the browser extension options page pointed at:
+   http://localhost:5082
+3. Authorize the browser tab you want BrowserCommander to control.
+
+Dev Tunnel commands
+1. Sign in to the Dev Tunnels CLI:
+   devtunnel user login
+2. Start a temporary public tunnel:
+   devtunnel host -p 5082 --allow-anonymous
+
+Take the HTTPS forwarding URL printed by Dev Tunnels and append /mcp.
+
+Example
+- Tunnel output:
+  https://xxxxx.euw.devtunnels.ms/
+- MCP URL for ChatGPT:
+  https://xxxxx.euw.devtunnels.ms/mcp
+
+ChatGPT app draft fields
+- Name:
+  BrowserCommander
+- Description:
+  Inspect and control authorized tabs in a local Chromium browser through MCP.
+- MCP server URL:
+  https://xxxxx.euw.devtunnels.ms/mcp
+- Authentication:
+  No Authentication
+
+Important notes
+- BrowserCommander currently exposes HTTP MCP at /mcp, not /mcp/sse.
+- The tunnel URL is only for ChatGPT. The extension itself should still use http://localhost:5082.
+- --allow-anonymous makes the forwarded MCP endpoint publicly reachable. Use it only for short-lived testing.
+- Stop the dev tunnel when the test is finished.

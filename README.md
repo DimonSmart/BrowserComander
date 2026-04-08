@@ -191,6 +191,32 @@ Point an MCP client at:
 http://localhost:5082/mcp
 ```
 
+### Temporary remote ChatGPT testing
+
+ChatGPT developer mode currently expects a remote MCP server URL, not `localhost`.
+For BrowserCommander, a practical test setup is to place a temporary HTTPS tunnel in front of the local HTTP MCP endpoint:
+
+```powershell
+devtunnel user login
+devtunnel host -p 5082 --allow-anonymous
+```
+
+Take the HTTPS forwarding URL shown by Dev Tunnels and append `/mcp`.
+Example:
+
+```text
+https://xxxxx.euw.devtunnels.ms/mcp
+```
+
+For BrowserCommander, use `/mcp`, not `/mcp/sse`.
+Keep the extension options page pointed at `http://localhost:5082`; the tunnel URL is only for the remote ChatGPT connection.
+
+Security warning:
+
+- `--allow-anonymous` makes the forwarded MCP endpoint publicly reachable.
+- Use it only for short-lived testing.
+- Do not use anonymous tunneling for sensitive browsing sessions.
+
 ### stdio MCP bridge
 
 Run the stdio bridge:

@@ -52,6 +52,18 @@
         </section>
 
         <section class="content-card">
+            <h2>ChatGPT cannot connect to the tunneled server</h2>
+            <ul class="section-list">
+                <li>ChatGPT apps currently require a remote server URL. A plain <span class="mono">localhost</span> address will not work there.</li>
+                <li>Use the public HTTPS tunnel URL and append <span class="mono">/mcp</span>.</li>
+                <li>For BrowserCommander, do not enter <span class="mono">/mcp/sse</span>. The current server endpoint is <span class="mono">/mcp</span>.</li>
+                <li>If the tunnel was started with <span class="mono">--allow-anonymous</span>, choose <span class="mono">No Authentication</span> in ChatGPT.</li>
+                <li>Keep both <span class="mono">BrowserCommanderServer.exe</span> and the <span class="mono">devtunnel host</span> process running during the test.</li>
+                <li>Keep the extension options page on <span class="mono">http://localhost:5082</span>. The tunnel URL is only for the remote MCP client.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
             <h2>Build output files are locked during local development</h2>
             <p>
                 Close or stop any running BrowserCommander server, bridge, or browser instance that still has

@@ -48,6 +48,82 @@
         </section>
 
         <section class="content-card">
+            <h2>Remote ChatGPT test access with Dev Tunnels</h2>
+            <p>
+                ChatGPT developer mode does not connect to <span class="mono">localhost</span> directly.
+                BrowserCommander exposes MCP locally at <span class="mono">http://localhost:5082/mcp</span>,
+                so for ChatGPT testing you need a public HTTPS tunnel that forwards to the same local server.
+            </p>
+            <ol class="section-list">
+                <li>Start <span class="mono">BrowserCommanderServer.exe</span> locally.</li>
+                <li>Sign in to the Dev Tunnels CLI with <span class="mono">devtunnel user login</span>.</li>
+                <li>Start a temporary public tunnel with <span class="mono">devtunnel host -p 5082 --allow-anonymous</span>.</li>
+                <li>Copy the HTTPS forwarding URL shown by Dev Tunnels and append <span class="mono">/mcp</span>.</li>
+            </ol>
+            <pre>https://xxxxx.euw.devtunnels.ms/mcp</pre>
+            <div class="callout">
+                Use <span class="mono">/mcp</span> for BrowserCommander. This server currently exposes HTTP MCP at
+                <span class="mono">/mcp</span>, not <span class="mono">/mcp/sse</span>.
+            </div>
+        </section>
+
+        <section class="content-card">
+            <h2>ChatGPT app draft fields</h2>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Name</td>
+                        <td><span class="mono">BrowserCommander</span></td>
+                    </tr>
+                    <tr>
+                        <td>Description</td>
+                        <td>Inspect and control authorized tabs in a local Chromium browser through MCP.</td>
+                    </tr>
+                    <tr>
+                        <td>MCP server URL</td>
+                        <td><span class="mono">https://&lt;your-tunnel-host&gt;/mcp</span></td>
+                    </tr>
+                    <tr>
+                        <td>Authentication</td>
+                        <td><span class="mono">No Authentication</span> when the tunnel was started with <span class="mono">--allow-anonymous</span>.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                Keep the browser extension options page pointed at <span class="mono">http://localhost:5082</span>.
+                The tunnel URL is only for the remote ChatGPT connection.
+            </p>
+        </section>
+
+        <section class="content-card">
+            <h2>Security warning for anonymous tunnels</h2>
+            <p>
+                <span class="mono">devtunnel host -p 5082 --allow-anonymous</span> is useful for short-lived testing,
+                but it makes the forwarded MCP endpoint publicly reachable.
+            </p>
+            <ul class="section-list">
+                <li>Use this only for temporary testing sessions.</li>
+                <li>Do not leave the tunnel running after the test is finished.</li>
+                <li>Do not use anonymous tunneling for sensitive browsing sessions or confidential data.</li>
+                <li>Remember that BrowserCommander can perform write actions against already authorized tabs.</li>
+            </ul>
+            <p>
+                Official references:
+                <a href="https://developers.openai.com/apps-sdk/deploy/connect-chatgpt">Connect from ChatGPT</a>,
+                <a href="https://developers.openai.com/api/docs/guides/developer-mode">ChatGPT developer mode</a>,
+                <a href="https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta">OpenAI Help Center</a>,
+                <a href="https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/cli-commands">Dev Tunnels CLI reference</a>,
+                <a href="https://learn.microsoft.com/en-us/azure/developer/dev-tunnels/security">Dev Tunnels security</a>.
+            </p>
+        </section>
+
+        <section class="content-card">
             <h2>Recommended order</h2>
             <ol class="section-list">
                 <li>Extract the portable bundle.</li>

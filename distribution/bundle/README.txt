@@ -13,6 +13,8 @@ Quick start
 3. Open the BrowserCommander extension options page and confirm the local server
    address is http://localhost:5082.
 4. Load the unpacked extension package from the separate release asset.
+5. For temporary remote ChatGPT testing, see:
+   config-examples\chatgpt-devtunnel.example.txt
 
 Notes
 - This alpha build is local-only. Use loopback addresses such as localhost or 127.0.0.1.
