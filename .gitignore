@@ -367,3 +367,6 @@ FodyWeavers.xsd
 .appdata/
 .localappdata/
 .nuget/
+
+# Local installation and publication experiments
+install-test/
