@@ -10,11 +10,36 @@ Console.WriteLine("TOOLS=" + string.Join(
     ",",
     tools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal)));
 
+EnsureToolsExist(
+    tools.Select(tool => tool.Name),
+    "browser_list_viewport_presets",
+    "page_set_viewport_preset",
+    "page_clear_viewport_override");
+
+var presetsResult = await client.CallToolAsync(
+    "browser_list_viewport_presets",
+    new Dictionary<string, object?>());
+
+Console.WriteLine("VIEWPORT_PRESETS_RESULT=" + JsonSerializer.Serialize(presetsResult));
+
 var pagesResult = await client.CallToolAsync(
     "browser_list_pages",
     new Dictionary<string, object?>());
 
 Console.WriteLine("PAGES_RESULT=" + JsonSerializer.Serialize(pagesResult));
+
+static void EnsureToolsExist(IEnumerable<string> toolNames, params string[] expectedTools)
+{
+    var nameSet = new HashSet<string>(toolNames, StringComparer.Ordinal);
+    var missingTools = expectedTools.Where(tool => !nameSet.Contains(tool)).ToArray();
+    if (missingTools.Length == 0)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException(
+        "Missing expected MCP tools: " + string.Join(", ", missingTools));
+}
 
 static IClientTransport CreateTransport(string[] args)
 {

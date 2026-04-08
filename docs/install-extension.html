@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | Install extension</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="mcp-config.html">MCP config</a>
+                    <a href="troubleshooting.html">Troubleshooting</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="content-card">
+            <p class="eyebrow">Chrome and Edge</p>
+            <h1>Install the unpacked extension</h1>
+            <p>
+                The alpha release is distributed as an unpacked extension package.
+                Download <span class="mono">browsercommander-extension-unpacked-vX.Y.Z.zip</span>
+                from the latest GitHub Release and extract it first.
+            </p>
+            <div class="button-row">
+                <a class="button" href="https://github.com/DimonSmart/BrowserComander/releases/latest">Open latest release</a>
+            </div>
+        </section>
+
+        <section class="content-card">
+            <h2>Chrome</h2>
+            <ol class="section-list">
+                <li>Open <span class="mono">chrome://extensions</span>.</li>
+                <li>Turn on <strong>Developer mode</strong>.</li>
+                <li>Select <strong>Load unpacked</strong>.</li>
+                <li>Choose the extracted extension folder that contains <span class="mono">manifest.json</span>.</li>
+            </ol>
+            <div class="callout">
+                Official Chrome unpacked install flow: <a href="https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked">Load unpacked</a>.
+            </div>
+        </section>
+
+        <section class="content-card">
+            <h2>Edge</h2>
+            <ol class="section-list">
+                <li>Open <span class="mono">edge://extensions</span>.</li>
+                <li>Turn on <strong>Developer mode</strong>.</li>
+                <li>Select <strong>Load unpacked</strong>.</li>
+                <li>Choose the extracted extension folder that contains <span class="mono">manifest.json</span>.</li>
+            </ol>
+        </section>
+
+        <section class="content-card">
+            <h2>After installation</h2>
+            <ol class="section-list">
+                <li>Open the extension <strong>Options</strong> page and verify the local server address. The default is <span class="mono">http://localhost:5082</span>.</li>
+                <li>Open the popup on the tab you want to automate.</li>
+                <li>Click <strong>Authorize Current Tab</strong>.</li>
+            </ol>
+        </section>
+
+        <footer class="footer">
+            <p><a href="index.html">Home</a> | <a href="install-server.html">Install server and CLI</a></p>
+        </footer>
+    </div>
+</body>
+</html>

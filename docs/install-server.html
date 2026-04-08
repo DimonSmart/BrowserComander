@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | Install server and CLI</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="mcp-config.html">MCP config</a>
+                    <a href="troubleshooting.html">Troubleshooting</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="content-card">
+            <p class="eyebrow">Portable Windows bundle</p>
+            <h1>Install the server and stdio bridge</h1>
+            <p>
+                Download <span class="mono">browsercommander-windows-x64-portable-vX.Y.Z.zip</span>
+                from the latest GitHub Release and extract it to a writable folder such as
+                <span class="mono">C:\Tools\BrowserCommander</span>.
+            </p>
+            <div class="button-row">
+                <a class="button" href="https://github.com/DimonSmart/BrowserComander/releases/latest">Open latest release</a>
+            </div>
+        </section>
+
+        <section class="content-card">
+            <h2>Files in the bundle</h2>
+            <ul class="section-list">
+                <li><span class="mono">BrowserCommanderServer.exe</span> hosts the local HTTP MCP endpoint.</li>
+                <li><span class="mono">BrowserCommander.McpStdioBridge.exe</span> exposes the same tools over stdio.</li>
+                <li><span class="mono">config-examples\</span> contains starter MCP client configuration snippets.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>Startup options</h2>
+            <h3>Option A: start the server manually</h3>
+            <pre>BrowserCommanderServer.exe</pre>
+            <p>The server should listen on <span class="mono">http://localhost:5082</span>.</p>
+
+            <h3>Option B: let the stdio bridge auto-start the server</h3>
+            <p>
+                If <span class="mono">BrowserCommander.McpStdioBridge.exe</span> and
+                <span class="mono">BrowserCommanderServer.exe</span> are in the same extracted folder,
+                the bridge can auto-start the server when your MCP client launches the bridge.
+            </p>
+        </section>
+
+        <section class="content-card">
+            <h2>Direct HTTP MCP endpoint</h2>
+            <pre>http://localhost:5082/mcp</pre>
+            <p>If your client supports HTTP MCP directly, you do not need the stdio bridge.</p>
+        </section>
+
+        <footer class="footer">
+            <p><a href="mcp-config.html">MCP config examples</a> | <a href="install-extension.html">Install extension</a></p>
+        </footer>
+    </div>
+</body>
+</html>

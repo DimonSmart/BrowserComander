@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local .NET and NuGet caches used for release validation
+.dotnet-cli/
+.appdata/
+.localappdata/
+.nuget/

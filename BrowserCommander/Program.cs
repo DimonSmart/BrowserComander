@@ -16,13 +16,6 @@ public static class Program
         var builder = WebAssemblyHostBuilder.CreateDefault(args);
         builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-        var serverAddress = builder.Configuration.GetSection("ServerSettings:ServerAddress").Value ?? string.Empty;
-
-        builder.Services.AddSingleton(new BrowserCommanderConfig
-        {
-            ServerAddress = serverAddress
-        });
-
         builder.UseBrowserExtension(browserExtension =>
         {
             if (browserExtension.Mode != BrowserExtensionMode.Background)

@@ -1,6 +1,7 @@
 const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 const AGENT_ID_KEY = 'browserCommander.agentId';
 const ALLOWED_TAB_IDS_KEY = 'browserCommander.allowedTabIds';
+const SERVER_ADDRESS_KEY = 'browserCommander.serverAddress';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const DEBUGGER_BUFFER_LIMIT = 200;
 const BROWSER_COMMANDER_PROTOCOL_VERSION = '2';
@@ -13,6 +14,8 @@ const state = {
   keepAliveTimer: null,
   reconnectTimer: null,
   serverAddress: null,
+  defaultServerAddress: null,
+  suppressReconnect: false,
   socket: null,
   socketBuffer: '',
   authorizedTabIds: []
@@ -43,18 +46,29 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await bootstrapAgent();
+  try {
+    await bootstrapAgent();
+  } catch (error) {
+    console.warn('BrowserCommander bootstrap failed during installation.', error);
+  }
+
   await chrome.tabs.create({ url: chrome.runtime.getURL('index.html') });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await bootstrapAgent();
+  try {
+    await bootstrapAgent();
+  } catch (error) {
+    console.warn('BrowserCommander bootstrap failed on startup.', error);
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const supportedMessageTypes = new Set([
     'wake',
     'status',
+    'getServerAddressSettings',
+    'setServerAddress',
     'authorizeTab',
     'revokeTab',
     'clearAuthorizedTabs'
@@ -67,6 +81,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   void (async () => {
     try {
       switch (message.type) {
+        case 'getServerAddressSettings':
+          sendResponse(await getServerAddressSettings());
+          return;
+        case 'setServerAddress':
+          await setConfiguredServerAddress(message.serverAddress);
+          break;
         case 'authorizeTab':
           await authorizeTab(message.tabId);
           break;
@@ -190,8 +210,12 @@ async function connectCore() {
 
     socket.addEventListener('close', event => {
       const closedBeforeHandshake = !handshakeCompleted;
+      const suppressReconnect = state.suppressReconnect;
+      state.suppressReconnect = false;
       cleanupSocket();
-      scheduleReconnect();
+      if (!suppressReconnect) {
+        scheduleReconnect();
+      }
 
       if (closedBeforeHandshake) {
         reject(new Error(`SignalR socket closed before handshake. Code ${event.code}.`));
@@ -376,6 +400,16 @@ function validateCommand(command, normalizedAction) {
     return 'script is required.';
   }
 
+  if (requiresViewportSize(normalizedAction)) {
+    if (!Number.isInteger(command?.width) || command.width <= 0) {
+      return 'width must be a positive integer.';
+    }
+
+    if (!Number.isInteger(command?.height) || command.height <= 0) {
+      return 'height must be a positive integer.';
+    }
+  }
+
   return null;
 }
 
@@ -530,6 +564,26 @@ async function executePageAction(command, action, baseResult) {
         readyState
       };
     }
+    case 'pageSetViewportSize': {
+      await applyViewportSize(command.tabId, command.width, command.height);
+      const tab = await getTabOrThrow(command.tabId);
+      return {
+        ...baseResult,
+        success: true,
+        url: tab.url ?? null,
+        title: tab.title ?? null
+      };
+    }
+    case 'pageClearViewportOverride': {
+      await clearViewportSizeOverride(command.tabId);
+      const tab = await getTabOrThrow(command.tabId);
+      return {
+        ...baseResult,
+        success: true,
+        url: tab.url ?? null,
+        title: tab.title ?? null
+      };
+    }
     default:
       throw createCommandError('unsupported_action', `Unsupported action '${action}'.`);
   }
@@ -658,6 +712,32 @@ async function executeDebuggerStep(command, operation, baseResult) {
       return executePageAction(command, 'pageConsoleMessages', baseResult);
     case 'readNetworkRequests':
       return executePageAction(command, 'pageNetworkRequests', baseResult);
+    case 'setViewportSize':
+      await applyViewportSize(command.tabId, command.width, command.height);
+      {
+        const tab = await getTabOrThrow(command.tabId);
+        return {
+          ...baseResult,
+          success: true,
+          exists: true,
+          visible: true,
+          url: tab.url ?? null,
+          title: tab.title ?? null
+        };
+      }
+    case 'clearViewportOverride':
+      await clearViewportSizeOverride(command.tabId);
+      {
+        const tab = await getTabOrThrow(command.tabId);
+        return {
+          ...baseResult,
+          success: true,
+          exists: true,
+          visible: true,
+          url: tab.url ?? null,
+          title: tab.title ?? null
+        };
+      }
     case 'pressKey':
       await pressKeyOnTab(command.tabId, command.key);
       return {
@@ -702,6 +782,8 @@ function createPlanStepCommand(command, step) {
     onlyVisible: typeof step?.onlyVisible === 'boolean' ? step.onlyVisible : command?.onlyVisible,
     interactiveOnly: typeof step?.interactiveOnly === 'boolean' ? step.interactiveOnly : command?.interactiveOnly,
     format: step?.format ?? command?.format ?? null,
+    width: Number.isInteger(step?.width) ? step.width : command?.width,
+    height: Number.isInteger(step?.height) ? step.height : command?.height,
     limit: Number.isInteger(step?.limit) ? step.limit : command?.limit,
     clearBuffer: typeof step?.clearBuffer === 'boolean' ? step.clearBuffer : command?.clearBuffer,
     timeoutMs: step?.timeoutMs > 0 ? step.timeoutMs : command?.timeoutMs
@@ -776,7 +858,9 @@ function isPageAction(action) {
     'pageGoBack',
     'pageGoForward',
     'pageWaitForUrl',
-    'pageWaitForLoadState'
+    'pageWaitForLoadState',
+    'pageSetViewportSize',
+    'pageClearViewportOverride'
   ]).has(action);
 }
 
@@ -845,6 +929,12 @@ function requiresUrl(action) {
 function requiresScript(action) {
   return new Set([
     'pageEvaluate'
+  ]).has(action);
+}
+
+function requiresViewportSize(action) {
+  return new Set([
+    'pageSetViewportSize'
   ]).has(action);
 }
 
@@ -968,6 +1058,37 @@ async function capturePageScreenshot(tabId, format) {
   );
 
   return response?.data ?? '';
+}
+
+async function applyViewportSize(tabId, width, height) {
+  await ensureDebuggerSession(tabId);
+
+  if (!Number.isInteger(width) || width <= 0) {
+    throw createCommandError('validation_failed', 'width must be a positive integer.');
+  }
+
+  if (!Number.isInteger(height) || height <= 0) {
+    throw createCommandError('validation_failed', 'height must be a positive integer.');
+  }
+
+  await chrome.debugger.sendCommand(
+    { tabId },
+    'Emulation.setDeviceMetricsOverride',
+    {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false
+    }
+  );
+}
+
+async function clearViewportSizeOverride(tabId) {
+  await ensureDebuggerSession(tabId);
+  await chrome.debugger.sendCommand(
+    { tabId },
+    'Emulation.clearDeviceMetricsOverride'
+  );
 }
 
 async function executeInTab(tabId, frameId, func, args = []) {
@@ -1653,19 +1774,109 @@ async function getServerAddress() {
     return state.serverAddress;
   }
 
+  const stored = await chrome.storage.local.get(SERVER_ADDRESS_KEY);
+  const storedServerAddress = normalizeServerAddressOrNull(stored?.[SERVER_ADDRESS_KEY]);
+  if (storedServerAddress) {
+    state.serverAddress = storedServerAddress;
+    return state.serverAddress;
+  }
+
+  const defaultServerAddress = await getDefaultServerAddress();
+  state.serverAddress = defaultServerAddress;
+  return state.serverAddress;
+}
+
+async function getDefaultServerAddress() {
+  if (state.defaultServerAddress) {
+    return state.defaultServerAddress;
+  }
+
   const response = await fetch(chrome.runtime.getURL('appsettings.json'));
   if (!response.ok) {
     throw new Error(`Failed to read appsettings.json. HTTP ${response.status}.`);
   }
 
   const config = await response.json();
-  state.serverAddress = (config?.ServerSettings?.ServerAddress ?? '').replace(/\/+$/, '');
+  state.defaultServerAddress = normalizeLocalServerAddress(config?.ServerSettings?.ServerAddress ?? '');
 
-  if (!state.serverAddress) {
+  if (!state.defaultServerAddress) {
     throw new Error('ServerSettings:ServerAddress is missing.');
   }
 
-  return state.serverAddress;
+  return state.defaultServerAddress;
+}
+
+async function getServerAddressSettings() {
+  return {
+    serverAddress: await getServerAddress(),
+    defaultServerAddress: await getDefaultServerAddress()
+  };
+}
+
+async function setConfiguredServerAddress(serverAddress) {
+  const normalizedServerAddress = normalizeLocalServerAddress(serverAddress);
+
+  await chrome.storage.local.set({
+    [SERVER_ADDRESS_KEY]: normalizedServerAddress
+  });
+
+  state.serverAddress = normalizedServerAddress;
+  await reconnectToConfiguredServer();
+}
+
+async function reconnectToConfiguredServer() {
+  clearReconnectTimer();
+
+  if (state.socket) {
+    state.suppressReconnect = true;
+
+    try {
+      state.socket.close(1000, 'Server address updated.');
+    } catch {
+    }
+  }
+
+  cleanupSocket();
+  await ensureConnected();
+}
+
+function normalizeLocalServerAddress(value) {
+  const normalized = normalizeServerAddressOrNull(value);
+  if (!normalized) {
+    throw new Error('Server address is required.');
+  }
+
+  const url = new URL(normalized);
+  if (!isLoopbackHostname(url.hostname)) {
+    throw new Error('Only localhost or loopback server addresses are supported in this build.');
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Server address must use http or https.');
+  }
+
+  return url.origin;
+}
+
+function normalizeServerAddressOrNull(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackHostname(hostname) {
+  const normalized = String(hostname ?? '').trim().toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '127.0.0.1'
+    || normalized === '[::1]'
+    || normalized === '::1';
 }
 
 function createWebSocketUrl(serverAddress, connectionToken) {

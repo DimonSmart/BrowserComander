@@ -6,14 +6,21 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 var builder = Host.CreateApplicationBuilder(args);
+var localServerProjectPath = ResolveLocalServerProjectPath();
+var publishedServerExecutablePath = ResolvePublishedServerExecutablePath();
 
 builder.Logging.ClearProviders();
 
 builder.Services.AddSingleton(new StdioBridgeOptions
 {
-    UpstreamEndpoint = ResolveUpstreamEndpoint(args)
+    UpstreamEndpoint = ResolveUpstreamEndpoint(args),
+    RepositoryRootPath = ResolveRepositoryRootPath(localServerProjectPath),
+    LocalServerProjectPath = localServerProjectPath,
+    PublishedServerExecutablePath = publishedServerExecutablePath
 });
 
+builder.Services.AddSingleton<BrowserCommanderToolCatalog>();
+builder.Services.AddSingleton<ServerProcessManager>();
 builder.Services.AddSingleton<UpstreamMcpProxy>();
 
 builder.Services.AddMcpServer()
@@ -21,7 +28,14 @@ builder.Services.AddMcpServer()
     .WithListToolsHandler(HandleListToolsAsync)
     .WithCallToolHandler(HandleCallToolAsync);
 
-await builder.Build().RunAsync();
+var host = builder.Build();
+var serverProcessManager = host.Services.GetRequiredService<ServerProcessManager>();
+if (serverProcessManager.CanAutoStart)
+{
+    await serverProcessManager.EnsureEndpointAvailableAsync(CancellationToken.None);
+}
+
+await host.RunAsync();
 
 static Uri ResolveUpstreamEndpoint(string[] args)
 {
@@ -38,14 +52,98 @@ static Uri ResolveUpstreamEndpoint(string[] args)
     return uri;
 }
 
+static string? ResolveLocalServerProjectPath()
+{
+    foreach (var rootPath in EnumerateSearchRoots())
+    {
+        var currentPath = rootPath;
+        while (!string.IsNullOrWhiteSpace(currentPath))
+        {
+            var candidate = Path.Combine(
+                currentPath,
+                "BrowserCommanderServer",
+                "BrowserCommanderServer.csproj");
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            currentPath = Directory.GetParent(currentPath)?.FullName;
+        }
+    }
+
+    return null;
+}
+
+static string? ResolveRepositoryRootPath(string? serverProjectPath)
+{
+    if (string.IsNullOrWhiteSpace(serverProjectPath))
+    {
+        return null;
+    }
+
+    var projectDirectoryPath = Path.GetDirectoryName(serverProjectPath);
+    return string.IsNullOrWhiteSpace(projectDirectoryPath)
+        ? null
+        : Directory.GetParent(projectDirectoryPath)?.FullName;
+}
+
+static string? ResolvePublishedServerExecutablePath()
+{
+    foreach (var rootPath in EnumerateSearchRoots())
+    {
+        foreach (var fileName in new[]
+        {
+            "BrowserCommanderServer.exe",
+            "BrowserCommanderServer"
+        })
+        {
+            var candidate = Path.Combine(rootPath, fileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    return null;
+}
+
+static IEnumerable<string> EnumerateSearchRoots()
+{
+    var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var candidate in new[]
+    {
+        Environment.CurrentDirectory,
+        AppContext.BaseDirectory
+    })
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            continue;
+        }
+
+        var fullPath = Path.GetFullPath(candidate);
+        if (seenPaths.Add(fullPath))
+        {
+            yield return fullPath;
+        }
+    }
+}
+
 static async ValueTask<ListToolsResult> HandleListToolsAsync(
     RequestContext<ListToolsRequestParams> requestContext,
-    CancellationToken cancellationToken)
+    CancellationToken _)
 {
     var services = requestContext.Services
         ?? throw new InvalidOperationException("Request services are unavailable.");
-    var proxy = services.GetRequiredService<UpstreamMcpProxy>();
-    return await proxy.ListToolsAsync(requestContext.Params, cancellationToken);
+    var toolCatalog = services.GetRequiredService<BrowserCommanderToolCatalog>();
+
+    return new ListToolsResult
+    {
+        Tools = toolCatalog.Tools.ToList()
+    };
 }
 
 static async ValueTask<CallToolResult> HandleCallToolAsync(

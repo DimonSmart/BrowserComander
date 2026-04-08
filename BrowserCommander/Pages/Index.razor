@@ -1,4 +1,43 @@
-﻿@page "/index.html"
+@page "/index.html"
 @inherits IndexPage
 
-<h1>Hello, from Blazor.</h1>
+<PageTitle>BrowserCommander Setup</PageTitle>
+
+<section class="welcome-shell">
+    <article class="welcome-card">
+        <p class="eyebrow">BrowserCommander</p>
+        <h1>Quick start</h1>
+        <p class="lead">
+            The extension is only one part of the setup. You also need the local server,
+            an MCP CLI or client, and a matching local server address in the extension options.
+        </p>
+
+        <ol class="steps">
+            <li>
+                <strong>Install and start the local program</strong>
+                <p>You need the local MCP server. For development, you can start it like this:</p>
+                <pre><code>dotnet run --project BrowserCommanderServer/BrowserCommanderServer.csproj --launch-profile http</code></pre>
+                <p class="note">The portable bundle and the default MCP endpoint use <code>http://localhost:5082/mcp</code>.</p>
+            </li>
+
+            <li>
+                <strong>Check the extension settings</strong>
+                <p>Open the extension <code>Options</code> page and make sure the server address matches your local install.</p>
+                <p class="note">This alpha build only allows loopback addresses such as <code>http://localhost:5082</code>.</p>
+            </li>
+
+            <li>
+                <strong>Configure your MCP CLI or client</strong>
+                <p>If your client uses stdio, start it through the bridge process:</p>
+                <pre><code>command: C:\Tools\BrowserCommander\BrowserCommander.McpStdioBridge.exe
+cwd: C:\Tools\BrowserCommander</code></pre>
+                <p class="note">If your client supports HTTP MCP directly, point it to <code>http://localhost:5082/mcp</code>.</p>
+            </li>
+
+            <li>
+                <strong>Authorize the current tab</strong>
+                <p>Open the extension popup and click <code>Authorize Current Tab</code>.</p>
+            </li>
+        </ol>
+    </article>
+</section>

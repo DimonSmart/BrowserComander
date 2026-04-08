@@ -36,12 +36,34 @@ Runtime flow:
 6. The extension executes the plan step by step using a small set of content-script, debugger, and tab-control primitives.
 7. The extension returns the merged result back to the server.
 
+## Public alpha distribution
+
+The first public distribution target is a Windows x64 local-only alpha:
+
+- GitHub Pages hosts the install and troubleshooting documentation from `docs/`.
+- GitHub Releases publish the downloadable assets.
+- The extension is distributed as an unpacked zip that users load through browser developer mode.
+- The desktop side is distributed as a portable bundle that contains:
+  - `BrowserCommanderServer.exe`
+  - `BrowserCommander.McpStdioBridge.exe`
+  - MCP config examples
+
+Expected release asset names:
+
+- `browsercommander-extension-unpacked-vX.Y.Z.zip`
+- `browsercommander-windows-x64-portable-vX.Y.Z.zip`
+- `SHA256SUMS.txt`
+
+Release process documentation for maintainers lives in `docs/release-plan.md`.
+
 ## Current MCP surface
 
 The server currently exposes these MCP tools:
 
 - `browser_list_pages`
   Lists explicitly authorized pages and returns `pageId` values used by the other tools.
+- `browser_list_viewport_presets`
+  Lists the built-in phone viewport presets that can be applied to an authorized page. These presets change viewport size only.
 - `page_url`
   Returns the current page URL.
 - `page_title`
@@ -58,6 +80,10 @@ The server currently exposes these MCP tools:
   Returns buffered console and runtime messages collected from the authorized page.
 - `page_network_requests`
   Returns buffered network activity collected from the authorized page.
+- `page_set_viewport_preset`
+  Applies a built-in phone viewport preset to the authorized page.
+- `page_clear_viewport_override`
+  Clears any active viewport-size override on the authorized page.
 - `page_goto`
   Navigates the already-open page to a new URL.
 - `page_reload`
@@ -116,6 +142,7 @@ This means most future behavior changes should happen in the server-side plan bu
 - Locators currently use CSS selectors only.
 - `page_find_locators` helps discover selectors, but the returned selectors are still CSS selectors.
 - Debugger-backed tools depend on the browser extension having the `debugger` permission.
+- Viewport presets currently override viewport size only. They do not emulate touch, mobile UA, DPR, or device frames.
 - `page_console_messages` and `page_network_requests` are in-memory buffers owned by the extension background worker.
 - `page_wait_for_load_state` currently supports `load` and `domcontentloaded`, not `networkidle`.
 - There is still no dialog, download, upload, popup, worker, or response-body tool yet.

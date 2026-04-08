@@ -29,6 +29,8 @@ public static class BrowserExecutionOperations
     public const string CaptureScreenshot = "captureScreenshot";
     public const string ReadConsoleMessages = "readConsoleMessages";
     public const string ReadNetworkRequests = "readNetworkRequests";
+    public const string SetViewportSize = "setViewportSize";
+    public const string ClearViewportOverride = "clearViewportOverride";
     public const string Goto = "goto";
     public const string Reload = "reload";
     public const string GoBack = "goBack";
@@ -69,6 +71,10 @@ public sealed class BrowserExecutionStep
     public bool? InteractiveOnly { get; set; }
 
     public string? Format { get; set; }
+
+    public int? Width { get; set; }
+
+    public int? Height { get; set; }
 
     public int? Limit { get; set; }
 

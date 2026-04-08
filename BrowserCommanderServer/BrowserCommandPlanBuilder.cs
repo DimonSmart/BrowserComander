@@ -56,6 +56,18 @@ public static class BrowserCommandPlanBuilder
                 step.ClearBuffer = clearBuffer;
             });
 
+    public static BrowserExecutionPlan PageSetViewportSize(int width, int height) =>
+        DebuggerPlan(
+            BrowserExecutionOperations.SetViewportSize,
+            step =>
+            {
+                step.Width = width;
+                step.Height = height;
+            });
+
+    public static BrowserExecutionPlan PageClearViewportOverride() =>
+        DebuggerPlan(BrowserExecutionOperations.ClearViewportOverride);
+
     public static BrowserExecutionPlan PageGoto(string url, string waitState) =>
         TabPlan(
             BrowserExecutionOperations.Goto,

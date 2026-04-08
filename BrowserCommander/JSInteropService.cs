@@ -11,19 +11,19 @@ public sealed class JSInteropService
         _jsRuntime = jsRuntime;
     }
 
-    public ValueTask SetTextAsync(string selector, string text)
-    {
-        return _jsRuntime.InvokeVoidAsync("setTextFunctionScript", selector, text);
-    }
-
-    public ValueTask<string?> GetTextAsync(string selector)
-    {
-        return _jsRuntime.InvokeAsync<string?>("getTextFunctionScript", selector);
-    }
-
     public ValueTask<BackgroundAgentStatus> GetBackgroundAgentStatusAsync()
     {
         return _jsRuntime.InvokeAsync<BackgroundAgentStatus>("getBackgroundAgentStatus");
+    }
+
+    public ValueTask<ServerAddressSettings> GetServerAddressSettingsAsync()
+    {
+        return _jsRuntime.InvokeAsync<ServerAddressSettings>("getServerAddressSettings");
+    }
+
+    public ValueTask<BackgroundAgentStatus> SetServerAddressAsync(string serverAddress)
+    {
+        return _jsRuntime.InvokeAsync<BackgroundAgentStatus>("setServerAddress", serverAddress);
     }
 
     public ValueTask<BackgroundAgentStatus> AuthorizeTabAsync(int tabId)

@@ -1,0 +1,8 @@
+Direct HTTP MCP endpoint
+
+Use this endpoint if your MCP client supports HTTP transport directly:
+
+http://localhost:5082/mcp
+
+If your client needs stdio instead, use BrowserCommander.McpStdioBridge.exe
+from the portable bundle and point the client to that executable.

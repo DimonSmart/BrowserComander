@@ -6,11 +6,45 @@ const { chromium } = require('playwright');
 const extensionPath = path.resolve(__dirname, '..', 'BrowserCommander', 'bin', 'Debug', 'net8.0', 'browserextension');
 const smokeUrl = process.env.BROWSER_COMMANDER_SMOKE_URL ?? 'http://127.0.0.1:8765/';
 const automationApiBase = process.env.BROWSER_COMMANDER_API_BASE ?? 'http://localhost:5082/api/browser-automation';
+const iPhone12ProPortrait = { width: 390, height: 844 };
 
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+async function executeCommand(command) {
+  const response = await fetch(`${automationApiBase}/commands`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(command)
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(
+      `Command '${command.action}' failed with HTTP ${response.status}: ${result?.error ?? 'unknown error'}.`);
+  }
+
+  if (!result?.success) {
+    throw new Error(`Command '${command.action}' returned an error: ${result?.error ?? 'unknown error'}.`);
+  }
+
+  return result;
+}
+
+async function evaluateValue(agentId, tabId, expression) {
+  const result = await executeCommand({
+    agentId,
+    tabId,
+    action: 'pageEvaluate',
+    script: expression
+  });
+
+  return JSON.parse(result.valueJson);
 }
 
 async function getAgents() {
@@ -93,28 +127,104 @@ async function main() {
     assert(Boolean(agent.agentId), 'The registered agent does not expose agentId.');
     assert(Boolean(tab?.tabId), 'The smoke page tab was not published by the extension.');
 
-    const setTextResponse = await fetch(`${automationApiBase}/set-text`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        agentId: agent.agentId,
-        tabId: tab.tabId,
-        selector: '#target-textarea',
-        text: 'Playwright smoke text'
-      })
+    const setTextResult = await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'setText',
+      selector: '#target-textarea',
+      text: 'Playwright smoke text'
     });
-
-    assert(setTextResponse.ok, `set-text request failed with HTTP ${setTextResponse.status}.`);
-
-    const setTextResult = await setTextResponse.json();
-    assert(setTextResult.success, `set-text returned an error: ${setTextResult.error ?? 'unknown error'}.`);
 
     await page.waitForFunction(
       expected => document.querySelector('#target-textarea')?.value === expected,
       'Playwright smoke text',
       { timeout: 15000 });
+
+    const initialViewport = await evaluateValue(
+      agent.agentId,
+      tab.tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'pageSetViewportSize',
+      width: iPhone12ProPortrait.width,
+      height: iPhone12ProPortrait.height
+    });
+
+    await page.waitForFunction(
+      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
+      iPhone12ProPortrait,
+      { timeout: 15000 });
+
+    const portraitViewport = await evaluateValue(
+      agent.agentId,
+      tab.tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+
+    assert(
+      portraitViewport.width === iPhone12ProPortrait.width
+      && portraitViewport.height === iPhone12ProPortrait.height,
+      `Viewport override did not apply. Actual: ${JSON.stringify(portraitViewport)}.`);
+
+    const landscapeViewport = {
+      width: iPhone12ProPortrait.height,
+      height: iPhone12ProPortrait.width
+    };
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'pageSetViewportSize',
+      width: landscapeViewport.width,
+      height: landscapeViewport.height
+    });
+
+    await page.waitForFunction(
+      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
+      landscapeViewport,
+      { timeout: 15000 });
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'pageReload',
+      waitState: 'load'
+    });
+
+    await page.waitForLoadState('load');
+
+    const reloadedViewport = await evaluateValue(
+      agent.agentId,
+      tab.tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+
+    assert(
+      reloadedViewport.width === landscapeViewport.width
+      && reloadedViewport.height === landscapeViewport.height,
+      `Viewport override did not persist after reload. Actual: ${JSON.stringify(reloadedViewport)}.`);
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'pageClearViewportOverride'
+    });
+
+    await page.waitForFunction(
+      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
+      initialViewport,
+      { timeout: 15000 });
+
+    const clearedViewport = await evaluateValue(
+      agent.agentId,
+      tab.tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+
+    assert(
+      clearedViewport.width === initialViewport.width
+      && clearedViewport.height === initialViewport.height,
+      `Viewport override did not clear. Actual: ${JSON.stringify(clearedViewport)}. Expected: ${JSON.stringify(initialViewport)}.`);
 
     console.log(JSON.stringify({ agentId: agent.agentId, tabId: tab.tabId }, null, 2));
     console.log('Smoke test passed.');

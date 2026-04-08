@@ -17,6 +17,8 @@ public static class BrowserCommandActions
     public const string PageGoForward = "pageGoForward";
     public const string PageWaitForUrl = "pageWaitForUrl";
     public const string PageWaitForLoadState = "pageWaitForLoadState";
+    public const string PageSetViewportSize = "pageSetViewportSize";
+    public const string PageClearViewportOverride = "pageClearViewportOverride";
 
     public const string LocatorClick = "locatorClick";
     public const string LocatorFill = "locatorFill";
@@ -99,6 +101,10 @@ public sealed class BrowserAutomationCommand
 
     public string? Format { get; set; }
 
+    public int? Width { get; set; }
+
+    public int? Height { get; set; }
+
     public int? Limit { get; set; }
 
     public bool ClearBuffer { get; set; }
@@ -154,6 +160,17 @@ public sealed class BrowserTabDescriptor
     public string? Url { get; set; }
 
     public string? Title { get; set; }
+}
+
+public sealed class BrowserViewportPreset
+{
+    public string Name { get; set; } = string.Empty;
+
+    public string Title { get; set; } = string.Empty;
+
+    public int Width { get; set; }
+
+    public int Height { get; set; }
 }
 
 public sealed class BrowserAgentRegistration

@@ -172,6 +172,19 @@ public class BrowserAutomationController : ControllerBase
             return "Script is required for this action.";
         }
 
+        if (RequiresViewportSize(action))
+        {
+            if (command.Width is null or <= 0)
+            {
+                return "Width must be a positive integer for this action.";
+            }
+
+            if (command.Height is null or <= 0)
+            {
+                return "Height must be a positive integer for this action.";
+            }
+        }
+
         return IsSupportedAction(action)
             ? null
             : $"Unsupported action '{command.Action}'.";
@@ -194,6 +207,8 @@ public class BrowserAutomationController : ControllerBase
                || action.Equals(BrowserCommandActions.PageGoForward, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.PageWaitForUrl, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.PageWaitForLoadState, StringComparison.OrdinalIgnoreCase)
+               || action.Equals(BrowserCommandActions.PageSetViewportSize, StringComparison.OrdinalIgnoreCase)
+               || action.Equals(BrowserCommandActions.PageClearViewportOverride, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorClick, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorFill, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorPress, StringComparison.OrdinalIgnoreCase)
@@ -252,6 +267,11 @@ public class BrowserAutomationController : ControllerBase
     private static bool RequiresScript(string action)
     {
         return action.Equals(BrowserCommandActions.PageEvaluate, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool RequiresViewportSize(string action)
+    {
+        return action.Equals(BrowserCommandActions.PageSetViewportSize, StringComparison.OrdinalIgnoreCase);
     }
 
     public sealed class SetTextCommandRequest

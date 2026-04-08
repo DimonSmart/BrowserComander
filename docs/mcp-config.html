@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | MCP config examples</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="mcp-config.html">MCP config</a>
+                    <a href="troubleshooting.html">Troubleshooting</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="content-card">
+            <p class="eyebrow">Client configuration</p>
+            <h1>MCP config examples</h1>
+            <p>
+                The portable bundle includes the same examples under <span class="mono">config-examples\</span>.
+                Replace placeholder paths with the folder where you extracted the bundle.
+            </p>
+        </section>
+
+        <section class="content-card">
+            <h2>Stdio bridge example</h2>
+            <p>Use this style of configuration when your MCP client expects a local executable.</p>
+            <pre>{
+  "mcpServers": {
+    "browsercommander": {
+      "command": "C:\\Tools\\BrowserCommander\\BrowserCommander.McpStdioBridge.exe"
+    }
+  }
+}</pre>
+        </section>
+
+        <section class="content-card">
+            <h2>Direct HTTP example</h2>
+            <p>Use this when your MCP client supports HTTP MCP directly.</p>
+            <pre>http://localhost:5082/mcp</pre>
+        </section>
+
+        <section class="content-card">
+            <h2>Recommended order</h2>
+            <ol class="section-list">
+                <li>Extract the portable bundle.</li>
+                <li>Load the unpacked extension and verify the extension options point to <span class="mono">http://localhost:5082</span>.</li>
+                <li>Use the stdio bridge if your MCP client does not support HTTP MCP.</li>
+                <li>Authorize the current tab before making tool calls.</li>
+            </ol>
+        </section>
+
+        <footer class="footer">
+            <p><a href="install-server.html">Install server and CLI</a> | <a href="support.html">Support</a></p>
+        </footer>
+    </div>
+</body>
+</html>

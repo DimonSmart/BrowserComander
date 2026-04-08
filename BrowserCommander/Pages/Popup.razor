@@ -1,12 +1,11 @@
 @page "/popup.html"
 @using BrowserCommander.Contracts
 @inherits BasePage
-@inject BrowserCommanderConfig ServerConfig
 @using WebExtensions.Net.Runtime
 
 <div class="popup-container">
     <h1 class="popup-header">BrowserCommander</h1>
-    <p>Server Address: @ServerConfig.ServerAddress</p>
+    <p>Server Address: @serverAddress</p>
     <p>Agent Id: @agentId</p>
     <p>Background: @(backgroundConnected ? "connected" : "disconnected")</p>
 
@@ -33,56 +32,13 @@
         <label for="allowedTabs">Authorized Tabs:</label>
         <textarea id="allowedTabs" readonly class="styled-input" style="height: 100px;">@authorizedTabsSummary</textarea>
     </div>
-
-    <hr style="width: 100%; margin: 20px 0;" />
-
-    <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="receivedCommands">Last Server Response:</label>
-        <textarea id="receivedCommands" @bind="receivedCommand" readonly placeholder="Server responses will appear here..." class="styled-input" style="height: 100px;"></textarea>
-    </form>
-
-    <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="serverTextInput">Enter Text to Send via Server:</label>
-        <input id="serverTextInput" @bind="textToSendToServer" placeholder="Type something to send through the server..." class="styled-input" />
-
-        <button type="button" @onclick="SendTextToServer" class="styled-button">Send via Server</button>
-    </form>
-
-    <hr style="width: 100%; margin: 20px 0;" />
-
-    <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="pageTextInput">Enter Text to Send to Page:</label>
-        <input id="pageTextInput" @bind="textToSendToPage" placeholder="Type something to send to page..." class="styled-input" />
-
-        <label for="selectorInput">Enter Selector:</label>
-        <input id="selectorInput" @bind="setSelector" placeholder="Type selector..." class="styled-input" />
-
-        <button type="button" @onclick="ClickFirstButtonOnPage" class="styled-button">Send Text to Page</button>
-    </form>
-
-    <hr style="width: 100%; margin: 20px 0;" />
-
-    <form class="popup-form" @onsubmit="PreventDefault">
-        <label for="getSelectorInput">Enter Selector to Get Text:</label>
-        <input id="getSelectorInput" @bind="getSelector" placeholder="Type selector..." class="styled-input" />
-
-        <label for="resultText">Text Result:</label>
-        <input id="resultText" @bind="textResult" readonly placeholder="Result will appear here..." class="styled-input" />
-
-        <button type="button" @onclick="GetTextFromPage" class="styled-button">Get Text</button>
-    </form>
 </div>
 
 @code {
     [Inject] JSInteropService JSInteropService { get; set; } = default!;
 
-    private string textToSendToServer { get; set; } = string.Empty;
-    private string textToSendToPage { get; set; } = string.Empty;
-    private string setSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
-    private string getSelector { get; set; } = "div#prompt-textarea[contenteditable=\"true\"]";
-    private string textResult { get; set; } = string.Empty;
-    private string receivedCommand { get; set; } = string.Empty;
     private string connectionError { get; set; } = string.Empty;
+    private string serverAddress { get; set; } = "Loading...";
     private string agentId { get; set; } = string.Empty;
     private bool backgroundConnected { get; set; }
     private int? activeTabId;
@@ -94,85 +50,23 @@
     protected override async Task OnInitializedAsync()
     {
         await base.OnInitializedAsync();
+        await RefreshServerAddressAsync();
         await RefreshActiveTabAsync();
         await RefreshBackgroundStatusAsync();
     }
 
-    private async Task SendTextToServer()
+    private async Task RefreshServerAddressAsync()
     {
-        if (!backgroundConnected || string.IsNullOrWhiteSpace(agentId))
-        {
-            await RefreshBackgroundStatusAsync();
-        }
-
-        if (!backgroundConnected || string.IsNullOrWhiteSpace(agentId))
-        {
-            AppendError("Background agent is not connected.");
-            return;
-        }
-
-        if (!activeTabId.HasValue)
-        {
-            AppendError("Unable to send text, no active tab is available.");
-            return;
-        }
-
-        if (!activeTabAuthorized)
-        {
-            AppendError("Authorize the current tab before sending server commands.");
-            return;
-        }
-
         try
         {
-            using var httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(ServerConfig.ServerAddress)
-            };
-
-            var response = await httpClient.PostAsJsonAsync(
-                "api/browser-automation/set-text",
-                new
-                {
-                    agentId,
-                    tabId = activeTabId.Value,
-                    selector = setSelector,
-                    text = textToSendToServer
-                });
-
-            var result = await response.Content.ReadFromJsonAsync<BrowserAutomationResult>();
-            connectionError = response.IsSuccessStatusCode
-                ? string.Empty
-                : $"Server returned {(int)response.StatusCode}.";
-
-            receivedCommand = result is null
-                ? "Server returned an empty response."
-                : result.Success
-                    ? $"setText succeeded for tab {result.TabId}."
-                    : $"error[{result.ErrorCode}]: {result.Error}";
-        }
-        catch (HttpRequestException ex)
-        {
-            connectionError = "Failed to call server API: " + ex.Message;
+            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            serverAddress = settings.ServerAddress;
         }
         catch (Exception ex)
         {
-            connectionError = "An error occurred: " + ex.Message;
+            serverAddress = "Unavailable";
+            AppendError("Failed to read server settings: " + ex.Message);
         }
-    }
-
-    private async Task ClickFirstButtonOnPage()
-    {
-        await JSInteropService.SetTextAsync(setSelector, textToSendToPage);
-    }
-
-    private async Task GetTextFromPage()
-    {
-        textResult = await JSInteropService.GetTextAsync(getSelector) ?? string.Empty;
-    }
-
-    private void PreventDefault()
-    {
     }
 
     private async Task RefreshActiveTabAsync()

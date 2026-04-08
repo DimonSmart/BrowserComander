@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | Public alpha</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="mcp-config.html">MCP config</a>
+                    <a href="troubleshooting.html">Troubleshooting</a>
+                    <a href="privacy.html">Privacy</a>
+                    <a href="support.html">Support</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="hero">
+            <p class="eyebrow">Windows x64 public alpha</p>
+            <h1>Local-first browser automation for real browser sessions.</h1>
+            <p>
+                BrowserCommander connects an authorized Chromium tab to a local MCP server.
+                The alpha release ships as an unpacked browser extension plus a portable Windows bundle
+                that contains the local server and the stdio bridge.
+            </p>
+            <div class="button-row">
+                <a class="button" href="https://github.com/DimonSmart/BrowserComander/releases/latest">Open latest release</a>
+                <a class="button-secondary" href="install-extension.html">Install the extension</a>
+                <a class="button-secondary" href="install-server.html">Install the server and CLI</a>
+            </div>
+            <div class="callout">
+                Alpha scope: local loopback only, Windows x64 only, developer-mode unpacked install for Chrome and Edge.
+            </div>
+        </section>
+
+        <section class="grid">
+            <article class="content-card">
+                <div class="kicker">Step 1</div>
+                <h3>Download the release assets</h3>
+                <p>
+                    You need two assets from the latest GitHub Release:
+                    <span class="mono">browsercommander-extension-unpacked-vX.Y.Z.zip</span> and
+                    <span class="mono">browsercommander-windows-x64-portable-vX.Y.Z.zip</span>.
+                </p>
+            </article>
+            <article class="content-card">
+                <div class="kicker">Step 2</div>
+                <h3>Start the local MCP side</h3>
+                <p>
+                    Extract the portable bundle and either run
+                    <span class="mono">BrowserCommanderServer.exe</span> yourself or point your MCP client at
+                    <span class="mono">BrowserCommander.McpStdioBridge.exe</span>.
+                </p>
+            </article>
+            <article class="content-card">
+                <div class="kicker">Step 3</div>
+                <h3>Load and authorize the extension</h3>
+                <p>
+                    Extract the extension zip, load it through browser developer mode, then authorize the current tab
+                    from the popup before using MCP tools.
+                </p>
+            </article>
+        </section>
+
+        <section class="content-card">
+            <h2 class="page-title">What ships in the alpha</h2>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Piece</th>
+                        <th>What it does</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="mono">BrowserCommander</span> extension</td>
+                        <td>Connects the browser to the local server, lets the user authorize tabs, and executes commands on those tabs.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">BrowserCommanderServer.exe</span></td>
+                        <td>Hosts the local HTTP MCP endpoint at <span class="mono">http://localhost:5082/mcp</span> and manages browser connections.</td>
+                    </tr>
+                    <tr>
+                        <td><span class="mono">BrowserCommander.McpStdioBridge.exe</span></td>
+                        <td>Exposes the same MCP tools over stdio and can auto-start the sibling server executable from the portable bundle.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <footer class="footer">
+            <p>
+                BrowserCommander is MIT licensed.
+                <a href="support.html">Support</a> |
+                <a href="privacy.html">Privacy</a> |
+                <a href="https://github.com/DimonSmart/BrowserComander">GitHub repository</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

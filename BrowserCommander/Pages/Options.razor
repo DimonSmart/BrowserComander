@@ -1,4 +1,135 @@
-﻿@page "/options.html"
+@page "/options.html"
 @inherits BasePage
+@inject JSInteropService JSInteropService
 
-<h1>My options page</h1>
+<PageTitle>BrowserCommander Options</PageTitle>
+
+<section class="options-shell">
+    <article class="options-card">
+        <p class="eyebrow">BrowserCommander</p>
+        <h1>Connection settings</h1>
+        <p class="lead">
+            This alpha build supports local MCP servers only. Use a loopback URL such as
+            <code>http://localhost:5082</code> or <code>http://127.0.0.1:5082</code>.
+        </p>
+
+        @if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            <div class="@StatusClass">@statusMessage</div>
+        }
+
+        <div class="options-form">
+            <label for="serverAddress">Local server address</label>
+            <input id="serverAddress" @bind="serverAddressInput" class="styled-input" />
+            <p class="hint">
+                Only loopback addresses are allowed in this build. The extension uses this base URL
+                for SignalR and the MCP HTTP endpoint.
+            </p>
+
+            <div class="action-row">
+                <button type="button" class="primary-button" @onclick="SaveServerAddressAsync" disabled="@isSaving">Save</button>
+                <button type="button" class="secondary-button" @onclick="ResetToDefaultAsync" disabled="@isSaving">Reset to default</button>
+            </div>
+        </div>
+
+        <div class="details-grid">
+            <div class="detail-card">
+                <span class="detail-label">Current</span>
+                <code>@effectiveServerAddress</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Default</span>
+                <code>@defaultServerAddress</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Background</span>
+                <code>@backgroundStatusText</code>
+            </div>
+        </div>
+    </article>
+</section>
+
+@code {
+    private string serverAddressInput { get; set; } = string.Empty;
+    private string effectiveServerAddress { get; set; } = "Loading...";
+    private string defaultServerAddress { get; set; } = "http://localhost:5082";
+    private string backgroundStatusText { get; set; } = "Loading...";
+    private string statusMessage { get; set; } = string.Empty;
+    private bool saveFailed { get; set; }
+    private bool isSaving { get; set; }
+
+    private string StatusClass => saveFailed ? "status-banner status-error" : "status-banner status-success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadStateAsync();
+    }
+
+    private async Task LoadStateAsync()
+    {
+        try
+        {
+            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            effectiveServerAddress = string.IsNullOrWhiteSpace(settings.ServerAddress)
+                ? defaultServerAddress
+                : settings.ServerAddress;
+            defaultServerAddress = string.IsNullOrWhiteSpace(settings.DefaultServerAddress)
+                ? defaultServerAddress
+                : settings.DefaultServerAddress;
+            serverAddressInput = effectiveServerAddress;
+
+            var backgroundStatus = await JSInteropService.GetBackgroundAgentStatusAsync();
+            ApplyBackgroundStatus(backgroundStatus);
+        }
+        catch (Exception ex)
+        {
+            saveFailed = true;
+            statusMessage = "Failed to load settings: " + ex.Message;
+            backgroundStatusText = "Unavailable";
+        }
+    }
+
+    private async Task SaveServerAddressAsync()
+    {
+        isSaving = true;
+        try
+        {
+            var backgroundStatus = await JSInteropService.SetServerAddressAsync(serverAddressInput);
+            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            effectiveServerAddress = settings.ServerAddress;
+            defaultServerAddress = settings.DefaultServerAddress;
+            serverAddressInput = effectiveServerAddress;
+            ApplyBackgroundStatus(backgroundStatus);
+
+            saveFailed = !backgroundStatus.Ok;
+            statusMessage = backgroundStatus.Ok && backgroundStatus.Connected
+                ? "Saved. Background agent reconnected."
+                : backgroundStatus.Ok
+                    ? "Saved. Background agent is not connected yet."
+                    : "Saved, but reconnect failed: " + backgroundStatus.Error;
+        }
+        catch (Exception ex)
+        {
+            saveFailed = true;
+            statusMessage = "Failed to save settings: " + ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ResetToDefaultAsync()
+    {
+        serverAddressInput = defaultServerAddress;
+        await SaveServerAddressAsync();
+    }
+
+    private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
+    {
+        backgroundStatusText = status is not null && status.Ok && status.Connected
+            ? "Connected"
+            : "Disconnected";
+    }
+}

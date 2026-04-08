@@ -1,0 +1,111 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - v*.*.*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing SemVer tag without the leading v, for example 0.1.2
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Release version is required."
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Release version '$version' must use SemVer major.minor.patch."
+          }
+
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build release assets
+        shell: pwsh
+        run: |
+          .\scripts\build-release-assets.ps1 `
+            -Version "${{ steps.version.outputs.value }}" `
+            -OutputRoot "artifacts\release"
+
+      - name: Validate release bundle
+        shell: pwsh
+        run: |
+          .\scripts\Test-ReleaseBundle.ps1 `
+            -Version "${{ steps.version.outputs.value }}" `
+            -OutputRoot "artifacts\release"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: browsercommander-release-v${{ steps.version.outputs.value }}
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.value }}"
+          $tag = "v$version"
+          $title = "BrowserCommander $tag"
+          $assetPaths = @(Get-ChildItem -Path "artifacts\release" -File |
+            Where-Object { $_.Extension -eq ".zip" -or $_.Name -eq "SHA256SUMS.txt" } |
+            Sort-Object Name |
+            ForEach-Object { $_.FullName })
+
+          if ($assetPaths.Count -eq 0) {
+            throw "No release assets were found in artifacts\release."
+          }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assetPaths --clobber
+          } else {
+            gh release create $tag @assetPaths `
+              --title $title `
+              --generate-notes `
+              --prerelease `
+              --verify-tag
+          }
+
+      - name: Write workflow summary
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.value }}"
+          $tag = "v$version"
+          @"
+          Release workflow finished for $tag.
+
+          Assets:
+          - browsercommander-extension-unpacked-$tag.zip
+          - browsercommander-windows-x64-portable-$tag.zip
+          - SHA256SUMS.txt
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

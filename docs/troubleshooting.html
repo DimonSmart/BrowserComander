@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | Troubleshooting</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="mcp-config.html">MCP config</a>
+                    <a href="troubleshooting.html">Troubleshooting</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="content-card">
+            <p class="eyebrow">Troubleshooting</p>
+            <h1>Common alpha issues</h1>
+        </section>
+
+        <section class="content-card">
+            <h2>The popup says the background is disconnected</h2>
+            <ul class="section-list">
+                <li>Make sure the local server is running on <span class="mono">http://localhost:5082</span>.</li>
+                <li>Open the extension options page and confirm the configured server address.</li>
+                <li>Reload the extension from the browser extensions page after changing unpacked files.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>The stdio bridge does not start the server</h2>
+            <ul class="section-list">
+                <li>Keep <span class="mono">BrowserCommander.McpStdioBridge.exe</span> and <span class="mono">BrowserCommanderServer.exe</span> in the same extracted folder.</li>
+                <li>Start <span class="mono">BrowserCommanderServer.exe</span> manually once to verify the bundle itself works.</li>
+                <li>Confirm the client is pointing to the bridge executable you extracted, not to an old path.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>The extension cannot save the server address</h2>
+            <ul class="section-list">
+                <li>This alpha build only accepts loopback addresses such as <span class="mono">localhost</span>, <span class="mono">127.0.0.1</span>, or <span class="mono">::1</span>.</li>
+                <li>Use a base server URL, for example <span class="mono">http://localhost:5082</span>, not a tool URL or a release page URL.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>Build output files are locked during local development</h2>
+            <p>
+                Close or stop any running BrowserCommander server, bridge, or browser instance that still has
+                the unpacked extension loaded, then rebuild.
+            </p>
+        </section>
+
+        <footer class="footer">
+            <p><a href="support.html">Get support</a> | <a href="index.html">Home</a></p>
+        </footer>
+    </div>
+</body>
+</html>

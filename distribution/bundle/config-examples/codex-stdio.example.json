@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "browsercommander": {
+      "command": "C:\\Tools\\BrowserCommander\\BrowserCommander.McpStdioBridge.exe"
+    }
+  }
+}

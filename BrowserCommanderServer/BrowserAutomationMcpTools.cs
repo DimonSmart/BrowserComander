@@ -28,6 +28,19 @@ public static class BrowserAutomationMcpTools
     }
 
     [McpServerTool(
+        Name = "browser_list_viewport_presets",
+        Title = "List Viewport Presets",
+        ReadOnly = true,
+        Idempotent = true,
+        OpenWorld = false,
+        UseStructuredContent = true)]
+    [Description("Lists the built-in phone viewport presets that can be applied to authorized pages. These presets control viewport size only, not full mobile emulation.")]
+    public static IReadOnlyCollection<BrowserViewportPreset> ListViewportPresets()
+    {
+        return BrowserViewportPresetCatalog.All.ToArray();
+    }
+
+    [McpServerTool(
         Name = "page_url",
         Title = "Get Page URL",
         ReadOnly = true,
@@ -230,6 +243,65 @@ public static class BrowserAutomationMcpTools
             cancellationToken);
 
         return CreateNetworkRequestsSnapshot(result, pageId);
+    }
+
+    [McpServerTool(
+        Name = "page_set_viewport_preset",
+        Title = "Apply Viewport Preset",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false,
+        UseStructuredContent = true)]
+    [Description("Applies a built-in phone viewport preset to the authorized page. This changes viewport size only and does not perform full mobile emulation.")]
+    public static Task<BrowserAutomationResult> PageSetViewportPreset(
+        [Description("Page identifier returned by browser_list_pages.")] string pageId,
+        [Description("Preset name returned by browser_list_viewport_presets.")] string preset,
+        [Description("Viewport orientation. Supported values: portrait, landscape.")] string orientation = "portrait",
+        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        IServiceProvider services = null!,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryCreateViewportPresetPlan(
+                preset,
+                orientation,
+                out var plan,
+                out var failureResult))
+        {
+            return Task.FromResult(failureResult);
+        }
+
+        return ExecutePlanAsync(
+            services,
+            pageId,
+            BrowserCommandActions.PageSetViewportSize,
+            plan,
+            timeoutMs,
+            cancellationToken);
+    }
+
+    [McpServerTool(
+        Name = "page_clear_viewport_override",
+        Title = "Clear Viewport Override",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false,
+        UseStructuredContent = true)]
+    [Description("Clears any active viewport-size override on the authorized page and returns it to the browser's normal desktop viewport.")]
+    public static Task<BrowserAutomationResult> PageClearViewportOverride(
+        [Description("Page identifier returned by browser_list_pages.")] string pageId,
+        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        IServiceProvider services = null!,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecutePlanAsync(
+            services,
+            pageId,
+            BrowserCommandActions.PageClearViewportOverride,
+            BrowserCommandPlanBuilder.PageClearViewportOverride(),
+            timeoutMs,
+            cancellationToken);
     }
 
     [McpServerTool(
@@ -647,6 +719,7 @@ public static class BrowserAutomationMcpTools
         return ExecutePlanAsync(
             services,
             pageId,
+            BrowserCommandActions.ExecutePlan,
             plan,
             timeoutMs,
             cancellationToken);
@@ -655,6 +728,7 @@ public static class BrowserAutomationMcpTools
     private static Task<BrowserAutomationResult> ExecutePlanAsync(
         IServiceProvider services,
         string pageId,
+        string action,
         BrowserExecutionPlan plan,
         int timeoutMs,
         CancellationToken cancellationToken)
@@ -662,7 +736,7 @@ public static class BrowserAutomationMcpTools
         if (!TryResolvePageId(
                 services,
                 pageId,
-                BrowserCommandActions.ExecutePlan,
+                action,
                 out var resolvedPageId,
                 out var failureResult))
         {
@@ -675,6 +749,22 @@ public static class BrowserAutomationMcpTools
         }
 
         return ExecuteAsync(services, command, cancellationToken);
+    }
+
+    private static Task<BrowserAutomationResult> ExecutePlanAsync(
+        IServiceProvider services,
+        string pageId,
+        BrowserExecutionPlan plan,
+        int timeoutMs,
+        CancellationToken cancellationToken)
+    {
+        return ExecutePlanAsync(
+            services,
+            pageId,
+            BrowserCommandActions.ExecutePlan,
+            plan,
+            timeoutMs,
+            cancellationToken);
     }
 
     private static Task<BrowserAutomationResult> ExecutePageCommandAsync(
@@ -844,6 +934,68 @@ public static class BrowserAutomationMcpTools
     private static int NormalizeLimit(int limit)
     {
         return limit > 0 ? limit : 100;
+    }
+
+    private static bool TryCreateViewportPresetPlan(
+        string? presetName,
+        string? orientation,
+        out BrowserExecutionPlan plan,
+        out BrowserAutomationResult failureResult)
+    {
+        if (!BrowserViewportPresetCatalog.TryGetByName(presetName, out var preset))
+        {
+            plan = new BrowserExecutionPlan();
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.PageSetViewportSize,
+                error: $"Unknown viewport preset '{presetName}'. Use browser_list_viewport_presets to discover supported names.");
+            return false;
+        }
+
+        if (!TryResolveViewportDimensions(preset, orientation, out var width, out var height, out var error))
+        {
+            plan = new BrowserExecutionPlan();
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.PageSetViewportSize,
+                error: error);
+            return false;
+        }
+
+        plan = BrowserCommandPlanBuilder.PageSetViewportSize(width, height);
+        failureResult = new BrowserAutomationResult();
+        return true;
+    }
+
+    private static bool TryResolveViewportDimensions(
+        BrowserViewportPreset preset,
+        string? orientation,
+        out int width,
+        out int height,
+        out string error)
+    {
+        var normalizedOrientation = orientation?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedOrientation)
+            || string.Equals(normalizedOrientation, "portrait", StringComparison.OrdinalIgnoreCase))
+        {
+            width = preset.Width;
+            height = preset.Height;
+            error = string.Empty;
+            return true;
+        }
+
+        if (string.Equals(normalizedOrientation, "landscape", StringComparison.OrdinalIgnoreCase))
+        {
+            width = preset.Height;
+            height = preset.Width;
+            error = string.Empty;
+            return true;
+        }
+
+        width = 0;
+        height = 0;
+        error = $"Unsupported orientation '{orientation}'. Supported values: portrait, landscape.";
+        return false;
     }
 
     private static string CreateInvalidPageIdMessage(string? pageId)

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrowserCommander | Privacy</title>
+    <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+    <div class="site-shell">
+        <header class="site-header">
+            <div class="topbar">
+                <a class="brand" href="index.html">BrowserCommander</a>
+                <nav class="nav-links">
+                    <a href="install-extension.html">Install extension</a>
+                    <a href="install-server.html">Install server and CLI</a>
+                    <a href="privacy.html">Privacy</a>
+                    <a href="support.html">Support</a>
+                </nav>
+            </div>
+        </header>
+
+        <section class="content-card">
+            <p class="eyebrow">Privacy</p>
+            <h1>BrowserCommander privacy summary</h1>
+            <p>
+                BrowserCommander is designed as a local-first tool. In the alpha release, the extension only connects
+                to a local MCP server on a loopback address such as <span class="mono">http://localhost:5082</span>.
+            </p>
+        </section>
+
+        <section class="content-card">
+            <h2>What data the product can handle</h2>
+            <ul class="section-list">
+                <li>Authorized tab metadata such as title and URL.</li>
+                <li>Page content or automation results that the user or MCP client explicitly requests.</li>
+                <li>Console output, screenshots, or network metadata if the user invokes those tools.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>What the alpha does not do</h2>
+            <ul class="section-list">
+                <li>No built-in cloud telemetry or analytics.</li>
+                <li>No external BrowserCommander-hosted backend.</li>
+                <li>No automatic publication of browsing data to third-party services by default.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>User control</h2>
+            <ul class="section-list">
+                <li>The browser user explicitly chooses which tab may be automated.</li>
+                <li>The extension settings page shows and controls the local server address.</li>
+                <li>The user can revoke tab authorization at any time from the popup.</li>
+            </ul>
+        </section>
+
+        <footer class="footer">
+            <p><a href="support.html">Support</a> | <a href="index.html">Home</a></p>
+        </footer>
+    </div>
+</body>
+</html>
