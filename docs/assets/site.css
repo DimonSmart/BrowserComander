@@ -167,6 +167,50 @@ li {
     margin-bottom: 20px;
 }
 
+.workflow-section {
+    overflow: hidden;
+}
+
+.workflow-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+    gap: 28px;
+    align-items: center;
+}
+
+.workflow-points {
+    margin-top: 18px;
+}
+
+.workflow-note {
+    margin: 18px 0 0;
+}
+
+.workflow-figure {
+    margin: 0;
+    padding: 18px;
+    border: 1px solid rgba(44, 51, 63, 0.08);
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at top left, rgba(143, 77, 34, 0.08), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 248, 238, 0.96) 100%);
+}
+
+.workflow-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 18px;
+    box-shadow: 0 22px 44px rgba(28, 36, 48, 0.16);
+}
+
+.workflow-caption {
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.6;
+}
+
 .callout {
     margin: 20px 0 0;
     padding: 16px 18px;
@@ -240,6 +284,12 @@ pre,
     color: var(--ink);
 }
 
+@media (max-width: 920px) {
+    .workflow-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 720px) {
     .site-shell {
         width: min(100% - 20px, 1120px);
@@ -255,6 +305,15 @@ pre,
     .content-card {
         padding: 22px;
         border-radius: 22px;
+    }
+
+    .workflow-figure {
+        padding: 12px;
+        border-radius: 18px;
+    }
+
+    .workflow-image {
+        border-radius: 14px;
     }
 
     p,

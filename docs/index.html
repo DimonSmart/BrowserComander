@@ -40,6 +40,39 @@
             </div>
         </section>
 
+        <section class="content-card workflow-section">
+            <div class="workflow-grid">
+                <div class="workflow-copy">
+                    <div class="kicker">How it works</div>
+                    <h2 class="page-title">Keep the live browser tab in the loop</h2>
+                    <p>
+                        BrowserCommander is built for the case where the browser is already open, the user is already
+                        logged in, and the exact page state already exists in that tab. Instead of recreating the flow
+                        from scratch, the MCP side attaches to that live session after the user authorizes it.
+                    </p>
+                    <ul class="section-list workflow-points">
+                        <li>The MCP client inspects the current page and decides what focused action to take next.</li>
+                        <li>The local server compiles that request into an execution plan for the extension.</li>
+                        <li>The extension runs the plan in the authorized browser tab and returns the result.</li>
+                    </ul>
+                    <p class="workflow-note">
+                        That makes BrowserCommander practical for debugging broken layouts, investigating real signed-in
+                        app states, and validating fixes directly in the page that already matters.
+                    </p>
+                </div>
+                <figure class="workflow-figure">
+                    <img
+                        class="workflow-image"
+                        src="assets/browsercommander-how-it-works.png"
+                        alt="Illustration showing ChatGPT using BrowserCommander to inspect and fix a live browser page">
+                    <figcaption class="workflow-caption">
+                        A browser-in-the-loop workflow: the model reasons over the current tab, BrowserCommander
+                        executes in that same session, and the result comes back immediately.
+                    </figcaption>
+                </figure>
+            </div>
+        </section>
+
         <section class="grid">
             <article class="content-card">
                 <div class="kicker">Step 1</div>
