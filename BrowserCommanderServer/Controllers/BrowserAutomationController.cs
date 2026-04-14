@@ -152,6 +152,16 @@ public class BrowserAutomationController : ControllerBase
             return "Selector is required.";
         }
 
+        if (RequiresSourceSelector(action) && string.IsNullOrWhiteSpace(command.SourceSelector))
+        {
+            return "SourceSelector is required for this action.";
+        }
+
+        if (RequiresTargetSelector(action) && string.IsNullOrWhiteSpace(command.TargetSelector))
+        {
+            return "TargetSelector is required for this action.";
+        }
+
         if (RequiresText(action) && string.IsNullOrEmpty(command.Text))
         {
             return "Text is required for this action.";
@@ -170,6 +180,22 @@ public class BrowserAutomationController : ControllerBase
         if (RequiresScript(action) && string.IsNullOrWhiteSpace(command.Script))
         {
             return "Script is required for this action.";
+        }
+
+        if (RequiresMouseButton(action))
+        {
+            var normalizedButton = NormalizeMouseButtonOrDefault(command.Button);
+            if (normalizedButton is null)
+            {
+                return "Button must be one of: left, middle, right.";
+            }
+
+            command.Button = normalizedButton;
+        }
+
+        if (RequiresMoveSteps(action) && (command.MoveSteps < 1 || command.MoveSteps > 100))
+        {
+            return "MoveSteps must be an integer between 1 and 100 for this action.";
         }
 
         if (RequiresViewportSize(action))
@@ -210,6 +236,7 @@ public class BrowserAutomationController : ControllerBase
                || action.Equals(BrowserCommandActions.PageSetViewportSize, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.PageClearViewportOverride, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorClick, StringComparison.OrdinalIgnoreCase)
+               || action.Equals(BrowserCommandActions.LocatorDragTo, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorFill, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorPress, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.LocatorInnerText, StringComparison.OrdinalIgnoreCase)
@@ -225,6 +252,16 @@ public class BrowserAutomationController : ControllerBase
                || action.Equals(BrowserCommandActions.GetHtml, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.Click, StringComparison.OrdinalIgnoreCase)
                || action.Equals(BrowserCommandActions.Exists, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool RequiresSourceSelector(string action)
+    {
+        return action.Equals(BrowserCommandActions.LocatorDragTo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool RequiresTargetSelector(string action)
+    {
+        return action.Equals(BrowserCommandActions.LocatorDragTo, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool RequiresSelector(string action)
@@ -258,6 +295,16 @@ public class BrowserAutomationController : ControllerBase
         return action.Equals(BrowserCommandActions.LocatorPress, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool RequiresMouseButton(string action)
+    {
+        return action.Equals(BrowserCommandActions.LocatorDragTo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool RequiresMoveSteps(string action)
+    {
+        return action.Equals(BrowserCommandActions.LocatorDragTo, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool RequiresUrl(string action)
     {
         return action.Equals(BrowserCommandActions.PageGoto, StringComparison.OrdinalIgnoreCase)
@@ -272,6 +319,19 @@ public class BrowserAutomationController : ControllerBase
     private static bool RequiresViewportSize(string action)
     {
         return action.Equals(BrowserCommandActions.PageSetViewportSize, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeMouseButtonOrDefault(string? button)
+    {
+        var normalizedButton = button?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedButton))
+        {
+            return "left";
+        }
+
+        return normalizedButton is "left" or "middle" or "right"
+            ? normalizedButton
+            : null;
     }
 
     public sealed class SetTextCommandRequest

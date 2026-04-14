@@ -310,6 +310,10 @@ async function executeCommand(command) {
       return await executePageAction(command, normalizedAction, baseResult);
     }
 
+    if (normalizedAction === 'locatorDragTo') {
+      return await executeLocatorDragTo(command, baseResult);
+    }
+
     if (normalizedAction === 'locatorPress') {
       return await executeLocatorPress(command, baseResult);
     }
@@ -384,6 +388,14 @@ function validateCommand(command, normalizedAction) {
     return 'selector is required.';
   }
 
+  if (requiresSourceSelector(normalizedAction) && !command?.sourceSelector) {
+    return 'sourceSelector is required.';
+  }
+
+  if (requiresTargetSelector(normalizedAction) && !command?.targetSelector) {
+    return 'targetSelector is required.';
+  }
+
   if (requiresText(normalizedAction) && typeof command?.text !== 'string') {
     return 'text is required.';
   }
@@ -398,6 +410,18 @@ function validateCommand(command, normalizedAction) {
 
   if (requiresScript(normalizedAction) && !command?.script) {
     return 'script is required.';
+  }
+
+  if (requiresMouseButton(normalizedAction)
+    && command?.button != null
+    && !isSupportedMouseButton(command.button)) {
+    return 'button must be one of: left, middle, right.';
+  }
+
+  if (requiresMoveSteps(normalizedAction)
+    && command?.moveSteps != null
+    && (!Number.isInteger(command.moveSteps) || command.moveSteps < 1 || command.moveSteps > 100)) {
+    return 'moveSteps must be an integer between 1 and 100.';
   }
 
   if (requiresViewportSize(normalizedAction)) {
@@ -637,6 +661,27 @@ async function executeLocatorPress(command, baseResult) {
   };
 }
 
+async function executeLocatorDragTo(command, baseResult) {
+  await dragLocatorTo(
+    command.tabId,
+    command.frameId,
+    command.sourceSelector,
+    command.targetSelector,
+    command.button,
+    command.moveSteps,
+    command.timeoutMs);
+
+  const tab = await getTabOrThrow(command.tabId);
+  return {
+    ...baseResult,
+    success: true,
+    exists: true,
+    visible: true,
+    url: tab.url ?? null,
+    title: tab.title ?? null
+  };
+}
+
 async function executePlanCommand(command, baseResult) {
   const steps = Array.isArray(command?.plan?.steps)
     ? command.plan.steps
@@ -746,6 +791,25 @@ async function executeDebuggerStep(command, operation, baseResult) {
         exists: true,
         visible: true
       };
+    case 'dragLocatorTo': {
+      await dragLocatorTo(
+        command.tabId,
+        command.frameId,
+        command.sourceSelector,
+        command.targetSelector,
+        command.button,
+        command.moveSteps,
+        command.timeoutMs);
+      const tab = await getTabOrThrow(command.tabId);
+      return {
+        ...baseResult,
+        success: true,
+        exists: true,
+        visible: true,
+        url: tab.url ?? null,
+        title: tab.title ?? null
+      };
+    }
     default:
       return {
         ...baseResult,
@@ -772,8 +836,12 @@ function createPlanStepCommand(command, step) {
   return {
     ...command,
     selector: step?.selector ?? command?.selector ?? null,
+    sourceSelector: step?.sourceSelector ?? command?.sourceSelector ?? null,
+    targetSelector: step?.targetSelector ?? command?.targetSelector ?? null,
     text: step?.text ?? command?.text ?? null,
     key: step?.key ?? command?.key ?? null,
+    button: step?.button ?? command?.button ?? 'left',
+    moveSteps: Number.isInteger(step?.moveSteps) ? step.moveSteps : command?.moveSteps,
     url: step?.url ?? command?.url ?? null,
     matchMode: step?.matchMode ?? command?.matchMode ?? null,
     waitState: step?.waitState ?? command?.waitState ?? null,
@@ -885,6 +953,18 @@ function isScriptAction(action) {
   ]).has(action);
 }
 
+function requiresSourceSelector(action) {
+  return new Set([
+    'locatorDragTo'
+  ]).has(action);
+}
+
+function requiresTargetSelector(action) {
+  return new Set([
+    'locatorDragTo'
+  ]).has(action);
+}
+
 function requiresSelector(action) {
   return new Set([
     'locatorClick',
@@ -919,6 +999,18 @@ function requiresKey(action) {
   ]).has(action);
 }
 
+function requiresMouseButton(action) {
+  return new Set([
+    'locatorDragTo'
+  ]).has(action);
+}
+
+function requiresMoveSteps(action) {
+  return new Set([
+    'locatorDragTo'
+  ]).has(action);
+}
+
 function requiresUrl(action) {
   return new Set([
     'pageGoto',
@@ -936,6 +1028,43 @@ function requiresViewportSize(action) {
   return new Set([
     'pageSetViewportSize'
   ]).has(action);
+}
+
+function isSupportedMouseButton(button) {
+  const normalizedButton = String(button ?? '').trim().toLowerCase();
+  return normalizedButton === 'left'
+    || normalizedButton === 'middle'
+    || normalizedButton === 'right';
+}
+
+function normalizeMouseButton(button) {
+  const normalizedButton = String(button ?? 'left').trim().toLowerCase();
+  switch (normalizedButton) {
+    case '':
+    case 'left':
+      return { button: 'left', buttons: 1 };
+    case 'middle':
+      return { button: 'middle', buttons: 4 };
+    case 'right':
+      return { button: 'right', buttons: 2 };
+    default:
+      throw createCommandError(
+        'validation_failed',
+        `Unsupported button '${button}'. Supported values: left, middle, right.`
+      );
+  }
+}
+
+function getCommandMoveSteps(command) {
+  if (command?.moveSteps == null) {
+    return 12;
+  }
+
+  if (!Number.isInteger(command.moveSteps) || command.moveSteps < 1 || command.moveSteps > 100) {
+    throw createCommandError('validation_failed', 'moveSteps must be an integer between 1 and 100.');
+  }
+
+  return command.moveSteps;
 }
 
 async function getTabOrThrow(tabId) {
@@ -1167,6 +1296,157 @@ async function pressKeyOnTab(tabId, key) {
       type: 'keyUp'
     }
   );
+}
+
+async function dragLocatorTo(tabId, frameId, sourceSelector, targetSelector, button, moveSteps, timeoutMs) {
+  if (frameId != null) {
+    throw createCommandError(
+      'unsupported_action',
+      'locatorDragTo currently supports only the top-level document.'
+    );
+  }
+
+  await ensureDebuggerSession(tabId);
+  await chrome.tabs.update(tabId, { active: true });
+  await chrome.debugger.sendCommand({ tabId }, 'Page.bringToFront');
+
+  if (typeof sourceSelector !== 'string' || sourceSelector.trim().length === 0) {
+    throw createCommandError('validation_failed', 'sourceSelector is required.');
+  }
+
+  if (typeof targetSelector !== 'string' || targetSelector.trim().length === 0) {
+    throw createCommandError('validation_failed', 'targetSelector is required.');
+  }
+
+  const effectiveTimeout = getCommandTimeout({ timeoutMs });
+  const startedAt = Date.now();
+  const normalizedMoveSteps = getCommandMoveSteps({ moveSteps });
+  const mouseButton = normalizeMouseButton(button);
+  const sourcePoint = await resolveLocatorPoint(
+    tabId,
+    sourceSelector,
+    getRemainingTimeout(startedAt, effectiveTimeout));
+  const targetPoint = await resolveLocatorPoint(
+    tabId,
+    targetSelector,
+    getRemainingTimeout(startedAt, effectiveTimeout));
+  let currentPoint = sourcePoint;
+  let mousePressed = false;
+
+  try {
+    await dispatchMouseEvent(tabId, {
+      type: 'mouseMoved',
+      x: sourcePoint.x,
+      y: sourcePoint.y,
+      button: 'none',
+      buttons: 0,
+      clickCount: 0
+    });
+
+    ensureTimeoutRemaining(startedAt, effectiveTimeout);
+
+    await dispatchMouseEvent(tabId, {
+      type: 'mousePressed',
+      x: sourcePoint.x,
+      y: sourcePoint.y,
+      button: mouseButton.button,
+      buttons: mouseButton.buttons,
+      clickCount: 1
+    });
+    mousePressed = true;
+
+    for (let stepIndex = 1; stepIndex <= normalizedMoveSteps; stepIndex += 1) {
+      ensureTimeoutRemaining(startedAt, effectiveTimeout);
+
+      const progress = stepIndex / normalizedMoveSteps;
+      currentPoint = {
+        x: interpolate(sourcePoint.x, targetPoint.x, progress),
+        y: interpolate(sourcePoint.y, targetPoint.y, progress)
+      };
+
+      await delay(16);
+      ensureTimeoutRemaining(startedAt, effectiveTimeout);
+
+      await dispatchMouseEvent(tabId, {
+        type: 'mouseMoved',
+        x: currentPoint.x,
+        y: currentPoint.y,
+        button: mouseButton.button,
+        buttons: mouseButton.buttons,
+        clickCount: 1
+      });
+    }
+
+    ensureTimeoutRemaining(startedAt, effectiveTimeout);
+
+    await dispatchMouseEvent(tabId, {
+      type: 'mouseReleased',
+      x: targetPoint.x,
+      y: targetPoint.y,
+      button: mouseButton.button,
+      buttons: 0,
+      clickCount: 1
+    });
+    mousePressed = false;
+  } finally {
+    if (mousePressed) {
+      try {
+        await dispatchMouseEvent(tabId, {
+          type: 'mouseReleased',
+          x: currentPoint.x,
+          y: currentPoint.y,
+          button: mouseButton.button,
+          buttons: 0,
+          clickCount: 1
+        });
+      } catch {
+      }
+    }
+  }
+}
+
+async function resolveLocatorPoint(tabId, selector, timeoutMs) {
+  const snapshot = await executeInTab(tabId, null, readLocatorPointSnapshot, [selector]);
+  if (!snapshot?.exists) {
+    throw createCommandError('element_not_found', `Element '${selector}' was not found.`);
+  }
+
+  if (!snapshot?.visible || !Number.isFinite(snapshot.x) || !Number.isFinite(snapshot.y)) {
+    throw createCommandError('element_not_visible', `Element '${selector}' is not visible.`);
+  }
+
+  return {
+    x: snapshot.x,
+    y: snapshot.y
+  };
+}
+
+async function dispatchMouseEvent(tabId, payload) {
+  await chrome.debugger.sendCommand(
+    { tabId },
+    'Input.dispatchMouseEvent',
+    {
+      ...payload,
+      x: payload.x,
+      y: payload.y,
+      pointerType: 'mouse'
+    }
+  );
+}
+
+function ensureTimeoutRemaining(startedAt, timeoutMs) {
+  if (Date.now() - startedAt > timeoutMs) {
+    throw createCommandError('timeout', `Timed out after ${timeoutMs} ms.`);
+  }
+}
+
+function getRemainingTimeout(startedAt, timeoutMs) {
+  ensureTimeoutRemaining(startedAt, timeoutMs);
+  return Math.max(1, timeoutMs - (Date.now() - startedAt));
+}
+
+function interpolate(start, end, progress) {
+  return start + ((end - start) * progress);
 }
 
 function createKeyDefinition(key) {
@@ -1598,6 +1878,41 @@ function readDocumentReadyState() {
 
 function readDocumentContent() {
   return document.documentElement?.outerHTML ?? '';
+}
+
+function readLocatorPointSnapshot(selector) {
+  const element = document.querySelector(selector);
+  if (!(element instanceof Element)) {
+    return {
+      exists: false,
+      visible: false,
+      x: null,
+      y: null
+    };
+  }
+
+  element.scrollIntoView({
+    block: 'center',
+    inline: 'center',
+    behavior: 'instant'
+  });
+
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const visible = style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && style.visibility !== 'collapse'
+    && style.opacity !== '0'
+    && rect.width > 0
+    && rect.height > 0
+    && element.getClientRects().length > 0;
+
+  return {
+    exists: true,
+    visible,
+    x: visible ? rect.left + (rect.width / 2) : null,
+    y: visible ? rect.top + (rect.height / 2) : null
+  };
 }
 
 async function sendInvocation(target, args) {

@@ -98,6 +98,8 @@ The server currently exposes these MCP tools:
   Waits for `load` or `domcontentloaded`.
 - `locator_click`
   Clicks the first matching element.
+- `locator_drag_to`
+  Drags from the center of one element to the center of another element using real mouse events. Supports `left`, `middle`, and `right`.
 - `locator_fill`
   Fills a text-entry element.
 - `locator_inner_text`
@@ -141,6 +143,7 @@ This means most future behavior changes should happen in the server-side plan bu
 - MCP tool calls use `pageId`, and the server now compiles them into structured execution plans before sending them to the browser agent.
 - Locators currently use CSS selectors only.
 - `page_find_locators` helps discover selectors, but the returned selectors are still CSS selectors.
+- `locator_drag_to` currently supports only the top-level document, not frame-relative dragging.
 - Debugger-backed tools depend on the browser extension having the `debugger` permission.
 - Viewport presets currently override viewport size only. They do not emulate touch, mobile UA, DPR, or device frames.
 - `page_console_messages` and `page_network_requests` are in-memory buffers owned by the extension background worker.
@@ -248,18 +251,6 @@ cwd: C:\Private\BrowserComander
 ```
 
 ## Smoke checks
-
-HTTP MCP smoke:
-
-```powershell
-dotnet run --project scripts/BrowserCommander.McpSmoke/BrowserCommander.McpSmoke.csproj
-```
-
-stdio MCP smoke:
-
-```powershell
-dotnet run --project scripts/BrowserCommander.McpSmoke/BrowserCommander.McpSmoke.csproj -- stdio
-```
 
 Browser end-to-end smoke:
 

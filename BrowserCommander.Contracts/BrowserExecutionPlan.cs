@@ -16,6 +16,7 @@ public static class BrowserExecutionOperations
     public const string FillLocator = "fillLocator";
     public const string FocusLocator = "focusLocator";
     public const string ClickLocator = "clickLocator";
+    public const string DragLocatorTo = "dragLocatorTo";
     public const string ReadInnerText = "readInnerText";
     public const string ReadTextContent = "readTextContent";
     public const string ReadInnerHtml = "readInnerHtml";
@@ -52,9 +53,17 @@ public sealed class BrowserExecutionStep
 
     public string? Selector { get; set; }
 
+    public string? SourceSelector { get; set; }
+
+    public string? TargetSelector { get; set; }
+
     public string? Text { get; set; }
 
     public string? Key { get; set; }
+
+    public string? Button { get; set; }
+
+    public int? MoveSteps { get; set; }
 
     public string? Url { get; set; }
 

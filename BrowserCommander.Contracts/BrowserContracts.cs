@@ -21,6 +21,7 @@ public static class BrowserCommandActions
     public const string PageClearViewportOverride = "pageClearViewportOverride";
 
     public const string LocatorClick = "locatorClick";
+    public const string LocatorDragTo = "locatorDragTo";
     public const string LocatorFill = "locatorFill";
     public const string LocatorPress = "locatorPress";
     public const string LocatorInnerText = "locatorInnerText";
@@ -81,9 +82,17 @@ public sealed class BrowserAutomationCommand
 
     public string? Selector { get; set; }
 
+    public string? SourceSelector { get; set; }
+
+    public string? TargetSelector { get; set; }
+
     public string? Text { get; set; }
 
     public string? Key { get; set; }
+
+    public string Button { get; set; } = "left";
+
+    public int MoveSteps { get; set; } = 12;
 
     public string? Url { get; set; }
 

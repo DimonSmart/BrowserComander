@@ -178,7 +178,7 @@ Recommended manual smoke:
 3. Start `BrowserCommanderServer.exe`, or launch `BrowserCommander.McpStdioBridge.exe` through an MCP client.
 4. Extract the extension zip and load it through browser developer mode.
 5. Open the extension options page and confirm the server address.
-6. Authorize a tab and run a small MCP smoke command.
+6. Authorize a tab and run the browser end-to-end smoke check.
 
 ## Operational rules
 

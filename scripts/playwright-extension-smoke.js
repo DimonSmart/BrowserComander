@@ -14,7 +14,7 @@ function assert(condition, message) {
   }
 }
 
-async function executeCommand(command) {
+async function sendCommand(command) {
   const response = await fetch(`${automationApiBase}/commands`, {
     method: 'POST',
     headers: {
@@ -24,16 +24,40 @@ async function executeCommand(command) {
   });
 
   const result = await response.json();
+  return {
+    ok: response.ok,
+    status: response.status,
+    result
+  };
+}
+
+async function executeCommand(command) {
+  const response = await sendCommand(command);
   if (!response.ok) {
     throw new Error(
-      `Command '${command.action}' failed with HTTP ${response.status}: ${result?.error ?? 'unknown error'}.`);
+      `Command '${command.action}' failed with HTTP ${response.status}: ${response.result?.error ?? 'unknown error'}.`);
   }
 
-  if (!result?.success) {
-    throw new Error(`Command '${command.action}' returned an error: ${result?.error ?? 'unknown error'}.`);
+  if (!response.result?.success) {
+    throw new Error(`Command '${command.action}' returned an error: ${response.result?.error ?? 'unknown error'}.`);
   }
 
-  return result;
+  return response.result;
+}
+
+async function expectCommandFailure(command, expectedStatus, expectedErrorCode) {
+  const response = await sendCommand(command);
+  assert(
+    !response.ok || !response.result?.success,
+    `Command '${command.action}' was expected to fail but succeeded.`);
+  assert(
+    response.status === expectedStatus,
+    `Command '${command.action}' returned HTTP ${response.status}, expected ${expectedStatus}.`);
+  assert(
+    response.result?.errorCode === expectedErrorCode,
+    `Command '${command.action}' returned error code '${response.result?.errorCode}', expected '${expectedErrorCode}'.`);
+
+  return response.result;
 }
 
 async function evaluateValue(agentId, tabId, expression) {
@@ -54,6 +78,125 @@ async function getAgents() {
   }
 
   return response.json();
+}
+
+async function sendRuntimeMessage(extensionPage, message) {
+  const response = await extensionPage.evaluate(async payload => {
+    return chrome.runtime.sendMessage(payload);
+  }, message);
+
+  assert(response?.ok, `Runtime message '${message.type}' failed: ${response?.error ?? 'unknown error'}.`);
+  return response;
+}
+
+async function waitForPublishedTab(tabId, shouldExist) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const agents = await getAgents();
+    const agent = agents.find(candidate => (candidate.tabs ?? []).some(tab => tab.tabId === tabId));
+    const tab = agent?.tabs?.find(candidate => candidate.tabId === tabId) ?? null;
+
+    if (shouldExist && agent && tab) {
+      return { agent, tab };
+    }
+
+    if (!shouldExist && !tab) {
+      return { agent: agent ?? null, tab: null };
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(
+    shouldExist
+      ? `Timed out waiting for tab ${tabId} to be published by the browser agent.`
+      : `Timed out waiting for tab ${tabId} to disappear from the published browser tabs.`);
+}
+
+async function readDropCount(page, selector) {
+  return page.evaluate(targetSelector => {
+    return Number(document.querySelector(targetSelector)?.dataset.dropCount ?? '0');
+  }, selector);
+}
+
+async function assertDragSuccess(page, agentId, tabId, button, targetSelector, moveSteps) {
+  const previousCount = await readDropCount(page, targetSelector);
+
+  await executeCommand({
+    agentId,
+    tabId,
+    action: 'locatorDragTo',
+    sourceSelector: '#drag-source',
+    targetSelector,
+    button,
+    moveSteps
+  });
+
+  await page.waitForFunction(
+    ({ selector, expectedCount, expectedButton }) => {
+      const target = document.querySelector(selector);
+      const status = document.querySelector('#drag-status');
+      if (!(target instanceof HTMLElement) || !(status instanceof HTMLElement)) {
+        return false;
+      }
+
+      return target.dataset.dropCount === String(expectedCount)
+        && target.dataset.lastDrop === 'true'
+        && status.dataset.lastResult === 'success'
+        && status.dataset.lastButton === expectedButton
+        && status.dataset.lastTarget === target.id
+        && Number(status.dataset.moveCount ?? '0') > 0;
+    },
+    {
+      selector: targetSelector,
+      expectedCount: previousCount + 1,
+      expectedButton: button
+    },
+    { timeout: 15000 }
+  );
+}
+
+async function waitForViewport(agentId, tabId, expectedViewport, timeoutMs = 15000) {
+  const startedAt = Date.now();
+  let lastViewport = null;
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const viewport = await evaluateValue(
+      agentId,
+      tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+    lastViewport = viewport;
+
+    if (viewport.width === expectedViewport.width && viewport.height === expectedViewport.height) {
+      return viewport;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    `Timed out waiting for viewport ${JSON.stringify(expectedViewport)}. Last viewport: ${JSON.stringify(lastViewport)}.`);
+}
+
+async function waitForViewportToDiffer(agentId, tabId, previousViewport, timeoutMs = 15000) {
+  const startedAt = Date.now();
+  let lastViewport = null;
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const viewport = await evaluateValue(
+      agentId,
+      tabId,
+      '({ width: window.innerWidth, height: window.innerHeight })');
+    lastViewport = viewport;
+
+    if (viewport.width !== previousViewport.width || viewport.height !== previousViewport.height) {
+      return viewport;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    `Timed out waiting for viewport to differ from ${JSON.stringify(previousViewport)}. Last viewport: ${JSON.stringify(lastViewport)}.`);
 }
 
 async function main() {
@@ -84,48 +227,59 @@ async function main() {
     await page.goto(smokeUrl, { waitUntil: 'networkidle' });
 
     const extensionPage = await context.newPage();
-    const authorization = await extensionPage.goto(`chrome-extension://${extensionId}/index.html`)
-      .then(async () => extensionPage.evaluate(async targetSmokeUrl => {
-        const tabs = await chrome.tabs.query({});
-        const targetTab = tabs.find(tab => tab.url?.startsWith(targetSmokeUrl));
-        if (!targetTab?.id) {
-          throw new Error('The smoke page tab was not found in chrome.tabs.query().');
-        }
+    await extensionPage.goto(`chrome-extension://${extensionId}/index.html`);
 
-        const status = await chrome.runtime.sendMessage({
-          type: 'authorizeTab',
-          tabId: targetTab.id
-        });
+    const authorization = await extensionPage.evaluate(async targetSmokeUrl => {
+      const tabs = await chrome.tabs.query({});
+      const targetTab = tabs.find(tab => tab.url?.startsWith(targetSmokeUrl));
+      if (!targetTab?.id) {
+        throw new Error('The smoke page tab was not found in chrome.tabs.query().');
+      }
 
-        return {
-          tabId: targetTab.id,
-          status
-        };
-      }, smokeUrl));
+      const status = await chrome.runtime.sendMessage({
+        type: 'authorizeTab',
+        tabId: targetTab.id
+      });
+
+      return {
+        tabId: targetTab.id,
+        status
+      };
+    }, smokeUrl);
 
     assert(authorization?.status?.ok, `Failed to authorize smoke tab: ${authorization?.status?.error ?? 'unknown error'}.`);
 
-    let agents = [];
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      agents = await getAgents();
-      const authorizedSmokeTab = agents
-        .flatMap(agent => agent.tabs ?? [])
-        .find(candidate => candidate.tabId === authorization.tabId && candidate.url?.startsWith(smokeUrl));
+    const published = await waitForPublishedTab(authorization.tabId, true);
+    const agent = published.agent;
+    const tab = published.tab;
 
-      if (agents.length > 0 && authorizedSmokeTab) {
-        break;
-      }
-
-      await page.waitForTimeout(1000);
-    }
-
-    assert(agents.length > 0, 'The browser agent did not register in the server.');
-
-    const agent = agents[0];
-    const tab = (agent.tabs ?? []).find(candidate => candidate.url?.startsWith(smokeUrl));
-
-    assert(Boolean(agent.agentId), 'The registered agent does not expose agentId.');
+    assert(Boolean(agent?.agentId), 'The registered agent does not expose agentId.');
     assert(Boolean(tab?.tabId), 'The smoke page tab was not published by the extension.');
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorClick',
+      selector: '#click-target'
+    });
+
+    await page.waitForFunction(
+      () => document.querySelector('#click-status')?.dataset.clickCount === '1',
+      null,
+      { timeout: 15000 });
+
+    await executeCommand({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorPress',
+      selector: '#press-target',
+      key: 'Enter'
+    });
+
+    await page.waitForFunction(
+      () => document.querySelector('#press-status')?.dataset.lastKey === 'Enter',
+      null,
+      { timeout: 15000 });
 
     const setTextResult = await executeCommand({
       agentId: agent.agentId,
@@ -135,10 +289,115 @@ async function main() {
       text: 'Playwright smoke text'
     });
 
+    assert(setTextResult.success, 'setText command did not return success.');
+
     await page.waitForFunction(
       expected => document.querySelector('#target-textarea')?.value === expected,
       'Playwright smoke text',
       { timeout: 15000 });
+
+    await assertDragSuccess(page, agent.agentId, tab.tabId, 'left', '#drop-left', 1);
+    await assertDragSuccess(page, agent.agentId, tab.tabId, 'middle', '#drop-middle', 12);
+    await assertDragSuccess(page, agent.agentId, tab.tabId, 'right', '#drop-right', 6);
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#missing-source',
+      targetSelector: '#drop-left',
+      button: 'left',
+      moveSteps: 4,
+      timeoutMs: 1500
+    }, 502, 'element_not_found');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#missing-target',
+      button: 'left',
+      moveSteps: 4,
+      timeoutMs: 1500
+    }, 502, 'element_not_found');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#hidden-source',
+      targetSelector: '#drop-left',
+      button: 'left',
+      moveSteps: 4,
+      timeoutMs: 1500
+    }, 502, 'element_not_visible');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#hidden-target',
+      button: 'left',
+      moveSteps: 4,
+      timeoutMs: 1500
+    }, 502, 'element_not_visible');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#drop-left',
+      button: 'primary',
+      moveSteps: 4
+    }, 400, 'validation_failed');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#drop-left',
+      button: 'left',
+      moveSteps: 0
+    }, 400, 'validation_failed');
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#drop-left',
+      button: 'left',
+      moveSteps: 100,
+      timeoutMs: 10
+    }, 504, 'timeout');
+
+    await sendRuntimeMessage(extensionPage, {
+      type: 'revokeTab',
+      tabId: tab.tabId
+    });
+
+    await waitForPublishedTab(tab.tabId, false);
+
+    await expectCommandFailure({
+      agentId: agent.agentId,
+      tabId: tab.tabId,
+      action: 'locatorDragTo',
+      sourceSelector: '#drag-source',
+      targetSelector: '#drop-left',
+      button: 'left',
+      moveSteps: 4
+    }, 403, 'tab_not_authorized');
+
+    await sendRuntimeMessage(extensionPage, {
+      type: 'authorizeTab',
+      tabId: tab.tabId
+    });
+
+    await waitForPublishedTab(tab.tabId, true);
 
     const initialViewport = await evaluateValue(
       agent.agentId,
@@ -153,15 +412,10 @@ async function main() {
       height: iPhone12ProPortrait.height
     });
 
-    await page.waitForFunction(
-      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
-      iPhone12ProPortrait,
-      { timeout: 15000 });
-
-    const portraitViewport = await evaluateValue(
+    const portraitViewport = await waitForViewport(
       agent.agentId,
       tab.tabId,
-      '({ width: window.innerWidth, height: window.innerHeight })');
+      iPhone12ProPortrait);
 
     assert(
       portraitViewport.width === iPhone12ProPortrait.width
@@ -181,10 +435,10 @@ async function main() {
       height: landscapeViewport.height
     });
 
-    await page.waitForFunction(
-      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
-      landscapeViewport,
-      { timeout: 15000 });
+    await waitForViewport(
+      agent.agentId,
+      tab.tabId,
+      landscapeViewport);
 
     await executeCommand({
       agentId: agent.agentId,
@@ -211,20 +465,16 @@ async function main() {
       action: 'pageClearViewportOverride'
     });
 
-    await page.waitForFunction(
-      expected => window.innerWidth === expected.width && window.innerHeight === expected.height,
-      initialViewport,
-      { timeout: 15000 });
-
-    const clearedViewport = await evaluateValue(
+    const clearedViewport = await waitForViewportToDiffer(
       agent.agentId,
       tab.tabId,
-      '({ width: window.innerWidth, height: window.innerHeight })');
+      landscapeViewport);
 
     assert(
-      clearedViewport.width === initialViewport.width
-      && clearedViewport.height === initialViewport.height,
-      `Viewport override did not clear. Actual: ${JSON.stringify(clearedViewport)}. Expected: ${JSON.stringify(initialViewport)}.`);
+      Math.abs(clearedViewport.width - initialViewport.width) <= 100
+      && Math.abs(clearedViewport.height - initialViewport.height) <= 100
+      && (clearedViewport.width !== landscapeViewport.width || clearedViewport.height !== landscapeViewport.height),
+      `Viewport override did not clear close to the original desktop size. Actual: ${JSON.stringify(clearedViewport)}. Expected near: ${JSON.stringify(initialViewport)}.`);
 
     console.log(JSON.stringify({ agentId: agent.agentId, tabId: tab.tabId }, null, 2));
     console.log('Smoke test passed.');

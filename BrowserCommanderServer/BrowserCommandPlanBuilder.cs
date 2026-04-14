@@ -111,6 +111,21 @@ public static class BrowserCommandPlanBuilder
             BrowserExecutionOperations.ClickLocator,
             step => step.Selector = selector);
 
+    public static BrowserExecutionPlan LocatorDragTo(
+        string sourceSelector,
+        string targetSelector,
+        string button,
+        int moveSteps) =>
+        DebuggerPlan(
+            BrowserExecutionOperations.DragLocatorTo,
+            step =>
+            {
+                step.SourceSelector = sourceSelector;
+                step.TargetSelector = targetSelector;
+                step.Button = button;
+                step.MoveSteps = moveSteps;
+            });
+
     public static BrowserExecutionPlan LocatorFill(string selector, string value) =>
         ContentPlan(
             BrowserExecutionOperations.FillLocator,

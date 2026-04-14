@@ -473,6 +473,48 @@ public static class BrowserAutomationMcpTools
     }
 
     [McpServerTool(
+        Name = "locator_drag_to",
+        Title = "Drag Locator To Locator",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = false,
+        UseStructuredContent = true)]
+    [Description("Drags from the center of one locator to the center of another locator using real mouse events. Supports left, middle, and right mouse buttons.")]
+    public static Task<BrowserAutomationResult> LocatorDragTo(
+        [Description("Page identifier returned by browser_list_pages.")] string pageId,
+        [Description("CSS selector of the drag source element.")] string sourceSelector,
+        [Description("CSS selector of the drag target element.")] string targetSelector,
+        [Description("Mouse button to hold during the drag. Supported values: left, middle, right.")] string button = "left",
+        [Description("Number of intermediate mouse move events between source and target. Supported range: 1 to 100.")] int moveSteps = 12,
+        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        IServiceProvider services = null!,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryValidateLocatorDragArguments(
+                sourceSelector,
+                targetSelector,
+                button,
+                moveSteps,
+                out var normalizedButton,
+                out var failureResult))
+        {
+            return Task.FromResult(failureResult);
+        }
+
+        return ExecutePlanAsync(
+            services,
+            pageId,
+            BrowserCommandPlanBuilder.LocatorDragTo(
+                sourceSelector,
+                targetSelector,
+                normalizedButton,
+                moveSteps),
+            timeoutMs,
+            cancellationToken);
+    }
+
+    [McpServerTool(
         Name = "locator_fill",
         Title = "Fill Locator",
         ReadOnly = false,
@@ -934,6 +976,70 @@ public static class BrowserAutomationMcpTools
     private static int NormalizeLimit(int limit)
     {
         return limit > 0 ? limit : 100;
+    }
+
+    private static bool TryValidateLocatorDragArguments(
+        string? sourceSelector,
+        string? targetSelector,
+        string? button,
+        int moveSteps,
+        out string normalizedButton,
+        out BrowserAutomationResult failureResult)
+    {
+        if (string.IsNullOrWhiteSpace(sourceSelector))
+        {
+            normalizedButton = string.Empty;
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.LocatorDragTo,
+                error: "SourceSelector is required.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(targetSelector))
+        {
+            normalizedButton = string.Empty;
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.LocatorDragTo,
+                error: "TargetSelector is required.");
+            return false;
+        }
+
+        normalizedButton = NormalizeMouseButtonOrDefault(button);
+        if (normalizedButton.Length == 0)
+        {
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.LocatorDragTo,
+                error: $"Unsupported button '{button}'. Supported values: left, middle, right.");
+            return false;
+        }
+
+        if (moveSteps is < 1 or > 100)
+        {
+            failureResult = CreateValidationFailureResult(
+                pageId: null,
+                action: BrowserCommandActions.LocatorDragTo,
+                error: "MoveSteps must be an integer between 1 and 100.");
+            return false;
+        }
+
+        failureResult = new BrowserAutomationResult();
+        return true;
+    }
+
+    private static string NormalizeMouseButtonOrDefault(string? button)
+    {
+        var normalizedButton = button?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedButton))
+        {
+            return "left";
+        }
+
+        return normalizedButton is "left" or "middle" or "right"
+            ? normalizedButton
+            : string.Empty;
     }
 
     private static bool TryCreateViewportPresetPlan(
