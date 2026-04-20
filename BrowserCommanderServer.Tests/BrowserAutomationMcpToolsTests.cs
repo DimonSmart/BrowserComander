@@ -9,10 +9,18 @@ namespace BrowserCommanderServer.Tests;
 public sealed class BrowserAutomationMcpToolsTests
 {
     [Fact]
-    public async Task PageEvaluate_ResolvesCurrentPageAndNormalizesTimeout()
+    public async Task PageEvaluate_UsesAgentDefaultTimeout_WhenTimeoutIsOmitted()
     {
         var service = new CapturingAutomationService
         {
+            Agents =
+            [
+                new BrowserAgentStatus
+                {
+                    AgentId = "agent-1",
+                    DefaultCommandTimeoutMs = 45000
+                }
+            ],
             Pages =
             [
                 new BrowserPageSummary
@@ -44,12 +52,76 @@ public sealed class BrowserAutomationMcpToolsTests
         Assert.Equal("agent-1", service.LastCommand!.AgentId);
         Assert.Equal(7, service.LastCommand.TabId);
         Assert.Equal(BrowserCommandActions.ExecutePlan, service.LastCommand.Action);
-        Assert.Equal(10000, service.LastCommand.TimeoutMs);
+        Assert.Equal(45000, service.LastCommand.TimeoutMs);
 
         var step = Assert.Single(service.LastCommand.Plan!.Steps);
         Assert.Equal(BrowserExecutionStepKinds.Debugger, step.Kind);
         Assert.Equal(BrowserExecutionOperations.Evaluate, step.Operation);
         Assert.Equal("window.innerWidth", step.Script);
+    }
+
+    [Fact]
+    public async Task PageEvaluate_UsesExplicitTimeout_WhenProvided()
+    {
+        var service = new CapturingAutomationService
+        {
+            Agents =
+            [
+                new BrowserAgentStatus
+                {
+                    AgentId = "agent-1",
+                    DefaultCommandTimeoutMs = 45000
+                }
+            ],
+            Pages =
+            [
+                new BrowserPageSummary
+                {
+                    PageId = "page:agent-1:7",
+                    AgentId = "agent-1",
+                    ReportedAgentId = "agent-1",
+                    TabId = 7,
+                    Active = true
+                }
+            ]
+        };
+
+        await BrowserAutomationMcpTools.PageEvaluate(
+            pageId: "current",
+            expression: "window.innerWidth",
+            timeoutMs: 1200,
+            services: new TestServiceProvider(service));
+
+        Assert.NotNull(service.LastCommand);
+        Assert.Equal(1200, service.LastCommand!.TimeoutMs);
+    }
+
+    [Fact]
+    public async Task PageEvaluate_FallsBackToPackagedDefaultTimeout_WhenAgentDefaultIsUnavailable()
+    {
+        var service = new CapturingAutomationService
+        {
+            Pages =
+            [
+                new BrowserPageSummary
+                {
+                    PageId = "page:agent-1:7",
+                    AgentId = "agent-1",
+                    ReportedAgentId = "agent-1",
+                    TabId = 7,
+                    Active = true
+                }
+            ]
+        };
+
+        await BrowserAutomationMcpTools.PageEvaluate(
+            pageId: "current",
+            expression: "window.innerWidth",
+            timeoutMs: 0,
+            services: new TestServiceProvider(service));
+
+        Assert.NotNull(service.LastCommand);
+        Assert.Equal(BrowserCommandDefaults.TimeoutMs, service.LastCommand!.TimeoutMs);
     }
 
     [Fact]
@@ -180,6 +252,8 @@ public sealed class BrowserAutomationMcpToolsTests
 
     private sealed class CapturingAutomationService : IBrowserAutomationService
     {
+        public IReadOnlyCollection<BrowserAgentStatus> Agents { get; set; } = [];
+
         public IReadOnlyCollection<BrowserPageSummary> Pages { get; set; } = [];
 
         public BrowserAutomationResult NextResult { get; set; } = new()
@@ -205,7 +279,7 @@ public sealed class BrowserAutomationMcpToolsTests
         {
         }
 
-        public IReadOnlyCollection<BrowserAgentStatus> GetAgents() => [];
+        public IReadOnlyCollection<BrowserAgentStatus> GetAgents() => Agents;
 
         public IReadOnlyCollection<BrowserPageSummary> GetPages() => Pages;
 

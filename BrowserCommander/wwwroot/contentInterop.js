@@ -10,10 +10,15 @@ function createBackgroundStatusFallback(error) {
     };
 }
 
-function createServerAddressSettingsFallback() {
+function createExtensionSettingsFallback(error) {
     return {
         serverAddress: "",
-        defaultServerAddress: ""
+        defaultServerAddress: "",
+        commandTimeoutMs: 30000,
+        defaultCommandTimeoutMs: 30000,
+        error: typeof error === "string"
+            ? error
+            : String(error ?? "Background worker did not respond.")
     };
 }
 
@@ -32,16 +37,17 @@ async function getBackgroundAgentStatus() {
         createBackgroundStatusFallback);
 }
 
-async function getServerAddressSettings() {
+async function getExtensionSettings() {
     return sendBackgroundMessage(
-        { type: "getServerAddressSettings" },
-        createServerAddressSettingsFallback);
+        { type: "getExtensionSettings" },
+        createExtensionSettingsFallback);
 }
 
-async function setServerAddress(serverAddress) {
+async function saveExtensionSettings(serverAddress, commandTimeoutMs) {
     return sendBackgroundMessage({
-        type: "setServerAddress",
-        serverAddress: serverAddress
+        type: "saveExtensionSettings",
+        serverAddress: serverAddress,
+        commandTimeoutMs: commandTimeoutMs
     }, createBackgroundStatusFallback);
 }
 

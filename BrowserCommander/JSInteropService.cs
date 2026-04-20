@@ -16,14 +16,17 @@ public sealed class JSInteropService
         return _jsRuntime.InvokeAsync<BackgroundAgentStatus>("getBackgroundAgentStatus");
     }
 
-    public ValueTask<ServerAddressSettings> GetServerAddressSettingsAsync()
+    public ValueTask<ExtensionSettings> GetExtensionSettingsAsync()
     {
-        return _jsRuntime.InvokeAsync<ServerAddressSettings>("getServerAddressSettings");
+        return _jsRuntime.InvokeAsync<ExtensionSettings>("getExtensionSettings");
     }
 
-    public ValueTask<BackgroundAgentStatus> SetServerAddressAsync(string serverAddress)
+    public ValueTask<BackgroundAgentStatus> SaveExtensionSettingsAsync(string serverAddress, int commandTimeoutMs)
     {
-        return _jsRuntime.InvokeAsync<BackgroundAgentStatus>("setServerAddress", serverAddress);
+        return _jsRuntime.InvokeAsync<BackgroundAgentStatus>(
+            "saveExtensionSettings",
+            serverAddress,
+            commandTimeoutMs);
     }
 
     public ValueTask<BackgroundAgentStatus> AuthorizeTabAsync(int tabId)

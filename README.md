@@ -73,7 +73,7 @@ The server currently exposes these MCP tools:
 - `page_find_locators`
   Searches the page for likely element candidates and returns suggested CSS selectors plus matching diagnostics.
 - `page_evaluate`
-  Evaluates JavaScript on the page through the browser debugger protocol.
+  Evaluates JavaScript on the page through the browser debugger protocol. If a tool call omits `timeoutMs`, BrowserCommander uses the default command timeout configured in the extension Options page.
 - `page_screenshot`
   Captures a page screenshot through the browser debugger protocol.
 - `page_console_messages`
@@ -183,6 +183,8 @@ BrowserCommander/bin/Debug/net8.0/browserextension
 Open the extension popup and click `Authorize Current Tab`.
 
 Only authorized tabs are published to the server and available to MCP tools.
+
+Use the extension `Options` page to configure the local server address and the default command timeout used when MCP tools omit `timeoutMs`.
 
 ## MCP transports
 

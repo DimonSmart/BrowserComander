@@ -2,12 +2,14 @@ const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 const AGENT_ID_KEY = 'browserCommander.agentId';
 const ALLOWED_TAB_IDS_KEY = 'browserCommander.allowedTabIds';
 const SERVER_ADDRESS_KEY = 'browserCommander.serverAddress';
+const COMMAND_TIMEOUT_KEY = 'browserCommander.commandTimeoutMs';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const DEBUGGER_BUFFER_LIMIT = 200;
 const BROWSER_COMMANDER_PROTOCOL_VERSION = '2';
 const MAX_PENDING_COMMAND_RESULTS = 50;
 const COMMAND_RESULT_MIN_RETRY_WINDOW_MS = 15000;
 const COMMAND_RESULT_RETRY_BUFFER_MS = 5000;
+const PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS = 30000;
 const debuggerSessions = new Map();
 
 const state = {
@@ -19,6 +21,8 @@ const state = {
   reconnectTimer: null,
   serverAddress: null,
   defaultServerAddress: null,
+  commandTimeout: null,
+  defaultCommandTimeout: null,
   suppressReconnect: false,
   socket: null,
   socketBuffer: '',
@@ -73,8 +77,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const supportedMessageTypes = new Set([
     'wake',
     'status',
-    'getServerAddressSettings',
-    'setServerAddress',
+    'getExtensionSettings',
+    'saveExtensionSettings',
     'authorizeTab',
     'revokeTab',
     'clearAuthorizedTabs',
@@ -88,14 +92,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   void (async () => {
     try {
       switch (message.type) {
-        case 'getServerAddressSettings':
-          sendResponse(await getServerAddressSettings());
+        case 'getExtensionSettings':
+          sendResponse(await getExtensionSettings());
           return;
         case 'getGlobalPages':
           sendResponse(await getGlobalPages());
           return;
-        case 'setServerAddress':
-          await setConfiguredServerAddress(message.serverAddress);
+        case 'saveExtensionSettings':
+          await saveExtensionSettings(message);
           break;
         case 'authorizeTab':
           await authorizeTab(message.tabId);
@@ -146,6 +150,7 @@ void bootstrapAgent();
 
 async function bootstrapAgent() {
   state.agentId ??= await getOrCreateAgentId();
+  state.commandTimeout = await getConfiguredCommandTimeout();
   state.authorizedTabIds = await fetchAuthorizedTabIdsFromServer();
   await ensureDebuggerSessionsForAuthorizedTabs();
   await ensureConnected();
@@ -247,6 +252,7 @@ async function registerAgent() {
     browserName: state.browserName,
     userAgent: navigator.userAgent,
     protocolVersion: BROWSER_COMMANDER_PROTOCOL_VERSION,
+    defaultCommandTimeoutMs: await getConfiguredCommandTimeout(),
     capabilities: {
       supportsPlanExecution: true,
       supportsContentScriptSteps: true,
@@ -1806,7 +1812,9 @@ async function waitForUrl(tabId, expectedUrl, matchMode, timeoutMs) {
 
 async function waitFor(predicate, timeoutMs, timeoutMessage) {
   const startedAt = Date.now();
-  const effectiveTimeout = timeoutMs > 0 ? timeoutMs : 10000;
+  const effectiveTimeout = timeoutMs > 0
+    ? timeoutMs
+    : state.commandTimeout ?? state.defaultCommandTimeout ?? PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS;
 
   while (Date.now() - startedAt <= effectiveTimeout) {
     const result = await predicate();
@@ -1884,7 +1892,7 @@ function globToRegExp(pattern) {
 function getCommandTimeout(command) {
   return command?.timeoutMs > 0
     ? command.timeoutMs
-    : 10000;
+    : state.commandTimeout ?? state.defaultCommandTimeout ?? PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS;
 }
 
 function getCommandLimit(command) {
@@ -2372,8 +2380,36 @@ async function getServerAddress() {
 }
 
 async function getDefaultServerAddress() {
-  if (state.defaultServerAddress) {
-    return state.defaultServerAddress;
+  return (await getDefaultExtensionSettings()).defaultServerAddress;
+}
+
+async function getConfiguredCommandTimeout() {
+  if (Number.isInteger(state.commandTimeout) && state.commandTimeout > 0) {
+    return state.commandTimeout;
+  }
+
+  const stored = await chrome.storage.local.get(COMMAND_TIMEOUT_KEY);
+  const storedCommandTimeout = normalizeCommandTimeoutOrNull(stored?.[COMMAND_TIMEOUT_KEY]);
+  if (storedCommandTimeout) {
+    state.commandTimeout = storedCommandTimeout;
+    return state.commandTimeout;
+  }
+
+  const defaultCommandTimeout = await getDefaultCommandTimeout();
+  state.commandTimeout = defaultCommandTimeout;
+  return state.commandTimeout;
+}
+
+async function getDefaultCommandTimeout() {
+  return (await getDefaultExtensionSettings()).defaultCommandTimeout;
+}
+
+async function getDefaultExtensionSettings() {
+  if (state.defaultServerAddress && state.defaultCommandTimeout) {
+    return {
+      defaultServerAddress: state.defaultServerAddress,
+      defaultCommandTimeout: state.defaultCommandTimeout
+    };
   }
 
   const response = await fetch(chrome.runtime.getURL('appsettings.json'));
@@ -2383,30 +2419,51 @@ async function getDefaultServerAddress() {
 
   const config = await response.json();
   state.defaultServerAddress = normalizeLocalServerAddress(config?.ServerSettings?.ServerAddress ?? '');
+  state.defaultCommandTimeout = normalizeCommandTimeoutOrDefault(
+    config?.ServerSettings?.DefaultCommandTimeoutMs,
+    PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS);
 
   if (!state.defaultServerAddress) {
     throw new Error('ServerSettings:ServerAddress is missing.');
   }
 
-  return state.defaultServerAddress;
-}
-
-async function getServerAddressSettings() {
   return {
-    serverAddress: await getServerAddress(),
-    defaultServerAddress: await getDefaultServerAddress()
+    defaultServerAddress: state.defaultServerAddress,
+    defaultCommandTimeout: state.defaultCommandTimeout
   };
 }
 
-async function setConfiguredServerAddress(serverAddress) {
-  const normalizedServerAddress = normalizeLocalServerAddress(serverAddress);
+async function getExtensionSettings() {
+  return {
+    serverAddress: await getServerAddress(),
+    defaultServerAddress: await getDefaultServerAddress(),
+    commandTimeoutMs: await getConfiguredCommandTimeout(),
+    defaultCommandTimeoutMs: await getDefaultCommandTimeout()
+  };
+}
+
+async function saveExtensionSettings(settings) {
+  const previousServerAddress = await getServerAddress();
+  const previousCommandTimeout = await getConfiguredCommandTimeout();
+  const normalizedServerAddress = normalizeLocalServerAddress(settings?.serverAddress);
+  const normalizedCommandTimeout = normalizeCommandTimeout(settings?.commandTimeoutMs);
 
   await chrome.storage.local.set({
-    [SERVER_ADDRESS_KEY]: normalizedServerAddress
+    [SERVER_ADDRESS_KEY]: normalizedServerAddress,
+    [COMMAND_TIMEOUT_KEY]: normalizedCommandTimeout
   });
 
   state.serverAddress = normalizedServerAddress;
-  await reconnectToConfiguredServer();
+  state.commandTimeout = normalizedCommandTimeout;
+
+  if (normalizedServerAddress !== previousServerAddress) {
+    await reconnectToConfiguredServer();
+    return;
+  }
+
+  if (normalizedCommandTimeout !== previousCommandTimeout && state.connected) {
+    await registerAgent();
+  }
 }
 
 async function reconnectToConfiguredServer() {
@@ -2441,6 +2498,29 @@ function normalizeLocalServerAddress(value) {
   }
 
   return url.origin;
+}
+
+function normalizeCommandTimeout(value) {
+  const normalized = normalizeCommandTimeoutOrNull(value);
+  if (!normalized) {
+    throw new Error('Command timeout must be a positive integer in milliseconds.');
+  }
+
+  return normalized;
+}
+
+function normalizeCommandTimeoutOrDefault(value, fallbackValue) {
+  return normalizeCommandTimeoutOrNull(value) ?? fallbackValue;
+}
+
+function normalizeCommandTimeoutOrNull(value) {
+  const numericValue = typeof value === 'number'
+    ? value
+    : Number.parseInt(String(value ?? '').trim(), 10);
+
+  return Number.isInteger(numericValue) && numericValue > 0
+    ? numericValue
+    : null;
 }
 
 function normalizeServerAddressOrNull(value) {

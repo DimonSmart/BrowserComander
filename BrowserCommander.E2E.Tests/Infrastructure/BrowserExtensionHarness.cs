@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BrowserCommander.Contracts;
 using Microsoft.Playwright;
 
 namespace BrowserCommander.E2E.Tests.Infrastructure;
@@ -65,8 +66,9 @@ internal sealed class BrowserExtensionHarness
     {
         return SendMessageAsync<BrowserExtensionStatus>(new
         {
-            type = "setServerAddress",
-            serverAddress = serverBaseUri.ToString()
+            type = "saveExtensionSettings",
+            serverAddress = serverBaseUri.ToString(),
+            commandTimeoutMs = BrowserCommandDefaults.TimeoutMs
         });
     }
 

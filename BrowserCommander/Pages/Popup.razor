@@ -94,7 +94,7 @@
     {
         try
         {
-            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            var settings = await JSInteropService.GetExtensionSettingsAsync();
             serverAddress = settings?.ServerAddress ?? string.Empty;
         }
         catch (Exception ex)

@@ -45,6 +45,9 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 existing.BrowserName = registration.BrowserName;
                 existing.UserAgent = registration.UserAgent;
                 existing.ProtocolVersion = registration.ProtocolVersion;
+                existing.DefaultCommandTimeoutMs = registration.DefaultCommandTimeoutMs > 0
+                    ? registration.DefaultCommandTimeoutMs
+                    : BrowserCommandDefaults.TimeoutMs;
                 existing.Capabilities = CloneCapabilities(registration.Capabilities);
                 existing.LastSeenAtUtc = now;
                 existing.Tabs = CloneTabs(registration.Tabs);
@@ -184,6 +187,7 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 BrowserName = agent.BrowserName,
                 UserAgent = agent.UserAgent,
                 ProtocolVersion = agent.ProtocolVersion,
+                DefaultCommandTimeoutMs = agent.DefaultCommandTimeoutMs,
                 Capabilities = CloneCapabilities(agent.Capabilities),
                 ConnectedAtUtc = agent.ConnectedAtUtc,
                 LastSeenAtUtc = agent.LastSeenAtUtc,
@@ -270,7 +274,7 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
 
         if (command.TimeoutMs <= 0)
         {
-            command.TimeoutMs = 10000;
+            command.TimeoutMs = BrowserCommandDefaults.TimeoutMs;
         }
 
         if (string.IsNullOrWhiteSpace(command.CommandId))
@@ -530,6 +534,8 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
 
         public string? ProtocolVersion { get; set; }
 
+        public int DefaultCommandTimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
+
         public BrowserAgentCapabilities Capabilities { get; set; } = new();
 
         public DateTimeOffset ConnectedAtUtc { get; private init; }
@@ -553,6 +559,9 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 BrowserName = registration.BrowserName,
                 UserAgent = registration.UserAgent,
                 ProtocolVersion = registration.ProtocolVersion,
+                DefaultCommandTimeoutMs = registration.DefaultCommandTimeoutMs > 0
+                    ? registration.DefaultCommandTimeoutMs
+                    : BrowserCommandDefaults.TimeoutMs,
                 Capabilities = CloneCapabilities(registration.Capabilities),
                 ConnectedAtUtc = now,
                 LastSeenAtUtc = now,

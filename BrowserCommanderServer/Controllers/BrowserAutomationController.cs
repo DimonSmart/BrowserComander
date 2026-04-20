@@ -379,7 +379,7 @@ public class BrowserAutomationController : ControllerBase
 
         public string Text { get; set; } = string.Empty;
 
-        public int TimeoutMs { get; set; } = 10000;
+        public int TimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
     }
 
     public sealed class GetTextCommandRequest
@@ -392,7 +392,7 @@ public class BrowserAutomationController : ControllerBase
 
         public string Selector { get; set; } = string.Empty;
 
-        public int TimeoutMs { get; set; } = 10000;
+        public int TimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
     }
 
     public sealed class GetHtmlCommandRequest
@@ -405,7 +405,7 @@ public class BrowserAutomationController : ControllerBase
 
         public string Selector { get; set; } = "html";
 
-        public int TimeoutMs { get; set; } = 10000;
+        public int TimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
     }
 
     public sealed class TabAuthorizationRequest

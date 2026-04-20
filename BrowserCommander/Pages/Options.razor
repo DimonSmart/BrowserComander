@@ -7,10 +7,11 @@
 <section class="options-shell">
     <article class="options-card">
         <p class="eyebrow">BrowserCommander</p>
-        <h1>Connection settings</h1>
+        <h1>Extension settings</h1>
         <p class="lead">
             This alpha build supports local MCP servers only. Use a loopback URL such as
-            <code>http://localhost:5082</code> or <code>http://127.0.0.1:5082</code>.
+            <code>http://localhost:5082</code> or <code>http://127.0.0.1:5082</code>, and set the
+            default timeout that BrowserCommander should use when a tool call omits <code>timeoutMs</code>.
         </p>
 
         @if (!string.IsNullOrWhiteSpace(statusMessage))
@@ -26,8 +27,14 @@
                 for SignalR and the MCP HTTP endpoint.
             </p>
 
+            <label for="commandTimeout">Default command timeout (ms)</label>
+            <input id="commandTimeout" @bind="commandTimeoutInput" class="styled-input" type="number" min="1" step="1" />
+            <p class="hint">
+                Used for browser commands when an MCP client does not pass <code>timeoutMs</code> explicitly.
+            </p>
+
             <div class="action-row">
-                <button type="button" class="primary-button" @onclick="SaveServerAddressAsync" disabled="@isSaving">Save</button>
+                <button type="button" class="primary-button" @onclick="SaveSettingsAsync" disabled="@isSaving">Save</button>
                 <button type="button" class="secondary-button" @onclick="ResetToDefaultAsync" disabled="@isSaving">Reset to default</button>
             </div>
         </div>
@@ -42,6 +49,14 @@
                 <code>@defaultServerAddress</code>
             </div>
             <div class="detail-card">
+                <span class="detail-label">Timeout</span>
+                <code>@effectiveCommandTimeoutMs</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Default Timeout</span>
+                <code>@defaultCommandTimeoutMs</code>
+            </div>
+            <div class="detail-card">
                 <span class="detail-label">Background</span>
                 <code>@backgroundStatusText</code>
             </div>
@@ -51,8 +66,11 @@
 
 @code {
     private string serverAddressInput { get; set; } = string.Empty;
+    private string commandTimeoutInput { get; set; } = string.Empty;
     private string effectiveServerAddress { get; set; } = "Loading...";
     private string defaultServerAddress { get; set; } = "http://localhost:5082";
+    private int effectiveCommandTimeoutMs { get; set; } = 30000;
+    private int defaultCommandTimeoutMs { get; set; } = 30000;
     private string backgroundStatusText { get; set; } = "Loading...";
     private string statusMessage { get; set; } = string.Empty;
     private bool saveFailed { get; set; }
@@ -70,14 +88,21 @@
     {
         try
         {
-            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            var settings = await JSInteropService.GetExtensionSettingsAsync();
             effectiveServerAddress = string.IsNullOrWhiteSpace(settings?.ServerAddress)
                 ? defaultServerAddress
                 : settings.ServerAddress;
             defaultServerAddress = string.IsNullOrWhiteSpace(settings?.DefaultServerAddress)
                 ? defaultServerAddress
                 : settings.DefaultServerAddress;
+            effectiveCommandTimeoutMs = settings?.CommandTimeoutMs > 0
+                ? settings.CommandTimeoutMs
+                : defaultCommandTimeoutMs;
+            defaultCommandTimeoutMs = settings?.DefaultCommandTimeoutMs > 0
+                ? settings.DefaultCommandTimeoutMs
+                : defaultCommandTimeoutMs;
             serverAddressInput = effectiveServerAddress;
+            commandTimeoutInput = effectiveCommandTimeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             var backgroundStatus = await JSInteropService.GetBackgroundAgentStatusAsync();
             ApplyBackgroundStatus(backgroundStatus);
@@ -90,20 +115,34 @@
         }
     }
 
-    private async Task SaveServerAddressAsync()
+    private async Task SaveSettingsAsync()
     {
         isSaving = true;
         try
         {
-            var backgroundStatus = await JSInteropService.SetServerAddressAsync(serverAddressInput);
-            var settings = await JSInteropService.GetServerAddressSettingsAsync();
+            if (!TryParseCommandTimeout(commandTimeoutInput, out var commandTimeoutMs))
+            {
+                saveFailed = true;
+                statusMessage = "Command timeout must be a positive integer in milliseconds.";
+                return;
+            }
+
+            var backgroundStatus = await JSInteropService.SaveExtensionSettingsAsync(serverAddressInput, commandTimeoutMs);
+            var settings = await JSInteropService.GetExtensionSettingsAsync();
             effectiveServerAddress = string.IsNullOrWhiteSpace(settings?.ServerAddress)
                 ? serverAddressInput
                 : settings.ServerAddress;
             defaultServerAddress = string.IsNullOrWhiteSpace(settings?.DefaultServerAddress)
                 ? defaultServerAddress
                 : settings.DefaultServerAddress;
+            effectiveCommandTimeoutMs = settings?.CommandTimeoutMs > 0
+                ? settings.CommandTimeoutMs
+                : commandTimeoutMs;
+            defaultCommandTimeoutMs = settings?.DefaultCommandTimeoutMs > 0
+                ? settings.DefaultCommandTimeoutMs
+                : defaultCommandTimeoutMs;
             serverAddressInput = effectiveServerAddress;
+            commandTimeoutInput = effectiveCommandTimeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
             ApplyBackgroundStatus(backgroundStatus);
 
             saveFailed = backgroundStatus is null || !backgroundStatus.Ok;
@@ -129,7 +168,8 @@
     private async Task ResetToDefaultAsync()
     {
         serverAddressInput = defaultServerAddress;
-        await SaveServerAddressAsync();
+        commandTimeoutInput = defaultCommandTimeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await SaveSettingsAsync();
     }
 
     private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
@@ -148,5 +188,11 @@
         return string.IsNullOrWhiteSpace(error)
             ? "The background agent did not provide an error message."
             : error;
+    }
+
+    private static bool TryParseCommandTimeout(string input, out int commandTimeoutMs)
+    {
+        return int.TryParse(input, out commandTimeoutMs)
+            && commandTimeoutMs > 0;
     }
 }

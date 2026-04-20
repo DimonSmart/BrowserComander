@@ -778,7 +778,7 @@
     function normalizeTimeout(timeoutMs) {
         return Number.isFinite(timeoutMs) && timeoutMs > 0
             ? timeoutMs
-            : 10000;
+            : 30000;
     }
 
     function normalizeLimit(limit) {

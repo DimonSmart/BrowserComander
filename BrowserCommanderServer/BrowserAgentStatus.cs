@@ -18,6 +18,8 @@ public sealed class BrowserAgentStatus
 
     public string? ProtocolVersion { get; set; }
 
+    public int DefaultCommandTimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
+
     public BrowserAgentCapabilities Capabilities { get; set; } = new();
 
     public DateTimeOffset ConnectedAtUtc { get; set; }

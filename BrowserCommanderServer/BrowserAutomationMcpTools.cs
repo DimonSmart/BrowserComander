@@ -50,7 +50,7 @@ public static class BrowserAutomationMcpTools
     [Description("Returns the current URL of an already-open authorized page.")]
     public static Task<BrowserAutomationResult> PageUrl(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -72,7 +72,7 @@ public static class BrowserAutomationMcpTools
     [Description("Returns the current title of an already-open authorized page.")]
     public static Task<BrowserAutomationResult> PageTitle(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -94,7 +94,7 @@ public static class BrowserAutomationMcpTools
     [Description("Returns the raw full HTML of the page, similar to Playwright page.content(). Use this only as a last resort when targeted tools were insufficient. Prefer browser_list_pages, page_find_locators, locator_* reads, and other focused queries first because full-page HTML is often large, noisy, and expensive for LLM context.")]
     public static Task<BrowserAutomationResult> PageContent(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -120,7 +120,7 @@ public static class BrowserAutomationMcpTools
         [Description("Whether to only return visible candidates.")] bool onlyVisible = true,
         [Description("Whether to limit the search to interactive elements.")] bool interactiveOnly = true,
         [Description("Maximum number of candidates to return.")] int limit = 20,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -150,7 +150,7 @@ public static class BrowserAutomationMcpTools
     public static async Task<BrowserEvaluateValue> PageEvaluate(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("JavaScript expression to evaluate.")] string expression,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -175,7 +175,7 @@ public static class BrowserAutomationMcpTools
     public static async Task<CallToolResult> PageScreenshot(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Screenshot format. Supported values: png, jpeg, webp.")] string format = "png",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -201,7 +201,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Maximum number of messages to return.")] int limit = 100,
         [Description("Whether to clear the in-memory buffer after returning the messages.")] bool clearBuffer = false,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -229,7 +229,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Maximum number of requests to return.")] int limit = 100,
         [Description("Whether to clear the in-memory buffer after returning the requests.")] bool clearBuffer = false,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -258,7 +258,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Preset name returned by browser_list_viewport_presets.")] string preset,
         [Description("Viewport orientation. Supported values: portrait, landscape.")] string orientation = "portrait",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -291,7 +291,7 @@ public static class BrowserAutomationMcpTools
     [Description("Clears any active viewport-size override on the authorized page and returns it to the browser's normal desktop viewport.")]
     public static Task<BrowserAutomationResult> PageClearViewportOverride(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -317,7 +317,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Destination URL.")] string url,
         [Description("Load state to wait for. Supported values: load, domcontentloaded.")] string waitUntil = "load",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -341,7 +341,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> PageReload(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Load state to wait for. Supported values: load, domcontentloaded.")] string waitUntil = "load",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -365,7 +365,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> PageGoBack(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Load state to wait for. Supported values: load, domcontentloaded.")] string waitUntil = "load",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -389,7 +389,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> PageGoForward(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Load state to wait for. Supported values: load, domcontentloaded.")] string waitUntil = "load",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -413,7 +413,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Expected URL pattern.")] string url,
         [Description("How to match the URL. Supported values: exact, contains, glob, regex.")] string matchMode = "glob",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -436,7 +436,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> PageWaitForLoadState(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("Load state to wait for. Supported values: load, domcontentloaded.")] string state = "load",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 30000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -460,7 +460,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> LocatorClick(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -487,7 +487,7 @@ public static class BrowserAutomationMcpTools
         [Description("CSS selector of the drag target element.")] string targetSelector,
         [Description("Mouse button to hold during the drag. Supported values: left, middle, right.")] string button = "left",
         [Description("Number of intermediate mouse move events between source and target. Supported range: 1 to 100.")] int moveSteps = 12,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -527,7 +527,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
         [Description("Text to write into the locator.")] string value,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -552,7 +552,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
         [Description("Keyboard key to press, for example Enter, Tab, Escape, ArrowDown, or a single character.")] string key,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -575,7 +575,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> LocatorInnerText(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -598,7 +598,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> LocatorTextContent(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -621,7 +621,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> LocatorInnerHtml(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -644,7 +644,7 @@ public static class BrowserAutomationMcpTools
     public static Task<BrowserAutomationResult> LocatorInputValue(
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -734,7 +734,7 @@ public static class BrowserAutomationMcpTools
         [Description("Page identifier returned by browser_list_pages.")] string pageId,
         [Description("CSS selector of the target element.")] string selector,
         [Description("Target wait state. Supported values: attached, detached, visible, hidden.")] string state = "visible",
-        [Description("Optional timeout in milliseconds.")] int timeoutMs = 10000,
+        [Description("Optional timeout in milliseconds. When omitted, uses the extension-configured default timeout.")] int timeoutMs = 0,
         IServiceProvider services = null!,
         CancellationToken cancellationToken = default)
     {
@@ -785,7 +785,7 @@ public static class BrowserAutomationMcpTools
             return Task.FromResult(failureResult);
         }
 
-        if (!TryCreatePagePlanCommand(resolvedPageId, plan, timeoutMs, out var command, out failureResult))
+        if (!TryCreatePagePlanCommand(services, resolvedPageId, plan, timeoutMs, out var command, out failureResult))
         {
             return Task.FromResult(failureResult);
         }
@@ -827,7 +827,7 @@ public static class BrowserAutomationMcpTools
             return Task.FromResult(failureResult);
         }
 
-        if (!TryCreatePageCommand(resolvedPageId, action, timeoutMs, configure, out var command, out failureResult))
+        if (!TryCreatePageCommand(services, resolvedPageId, action, timeoutMs, configure, out var command, out failureResult))
         {
             return Task.FromResult(failureResult);
         }
@@ -878,6 +878,7 @@ public static class BrowserAutomationMcpTools
     }
 
     private static bool TryCreatePagePlanCommand(
+        IServiceProvider services,
         string pageId,
         BrowserExecutionPlan plan,
         int timeoutMs,
@@ -899,7 +900,7 @@ public static class BrowserAutomationMcpTools
             AgentId = pageRef.AgentId,
             TabId = pageRef.TabId,
             Action = BrowserCommandActions.ExecutePlan,
-            TimeoutMs = NormalizeTimeout(timeoutMs),
+            TimeoutMs = ResolveTimeout(services, pageRef.AgentId, timeoutMs),
             Plan = plan
         };
 
@@ -930,6 +931,7 @@ public static class BrowserAutomationMcpTools
     }
 
     private static bool TryCreatePageCommand(
+        IServiceProvider services,
         string pageId,
         string action,
         int timeoutMs,
@@ -952,7 +954,7 @@ public static class BrowserAutomationMcpTools
             AgentId = pageRef.AgentId,
             TabId = pageRef.TabId,
             Action = action,
-            TimeoutMs = NormalizeTimeout(timeoutMs)
+            TimeoutMs = ResolveTimeout(services, pageRef.AgentId, timeoutMs)
         };
 
         configure?.Invoke(command);
@@ -968,9 +970,20 @@ public static class BrowserAutomationMcpTools
         return GetAutomationService(services).ExecuteCommandAsync(command, cancellationToken);
     }
 
-    private static int NormalizeTimeout(int timeoutMs)
+    private static int ResolveTimeout(IServiceProvider services, string agentId, int timeoutMs)
     {
-        return timeoutMs > 0 ? timeoutMs : 10000;
+        if (timeoutMs > 0)
+        {
+            return timeoutMs;
+        }
+
+        var configuredAgentTimeout = GetAutomationService(services).GetAgents()
+            .FirstOrDefault(agent => string.Equals(agent.AgentId, agentId, StringComparison.Ordinal))
+            ?.DefaultCommandTimeoutMs;
+
+        return configuredAgentTimeout > 0
+            ? configuredAgentTimeout.Value
+            : BrowserCommandDefaults.TimeoutMs;
     }
 
     private static int NormalizeLimit(int limit)

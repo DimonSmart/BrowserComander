@@ -59,6 +59,11 @@ public static class BrowserCommandErrorCodes
     public const string ExecutionFailed = "execution_failed";
 }
 
+public static class BrowserCommandDefaults
+{
+    public const int TimeoutMs = 30000;
+}
+
 public static class BrowserCommanderHubMethods
 {
     public const string RegisterAgent = "RegisterAgent";
@@ -119,7 +124,7 @@ public sealed class BrowserAutomationCommand
 
     public bool ClearBuffer { get; set; }
 
-    public int TimeoutMs { get; set; } = 10000;
+    public int TimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
 }
 
 public sealed class BrowserAutomationResult
@@ -194,6 +199,8 @@ public sealed class BrowserAgentRegistration
     public string? UserAgent { get; set; }
 
     public string? ProtocolVersion { get; set; }
+
+    public int DefaultCommandTimeoutMs { get; set; } = BrowserCommandDefaults.TimeoutMs;
 
     public BrowserAgentCapabilities Capabilities { get; set; } = new();
 
