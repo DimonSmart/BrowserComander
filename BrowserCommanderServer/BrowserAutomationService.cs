@@ -157,10 +157,13 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
         foreach (var pendingPair in _pendingCommands.Values.Where(command => command.ConnectionId == connectionId))
         {
             _logger.LogWarning(
-                "Completing pending command {CommandId} as {ErrorCode} because connection {ConnectionId} disconnected.",
+                "Extension disconnect detected while command {CommandId} was pending. AgentId={AgentId}, TabId={TabId}, Action={Action}, ConnectionId={ConnectionId}, ErrorCode={ErrorCode}.",
                 pendingPair.Command.CommandId,
-                BrowserCommandErrorCodes.AgentDisconnected,
-                connectionId);
+                pendingPair.Command.AgentId,
+                pendingPair.Command.TabId,
+                pendingPair.Command.Action,
+                connectionId,
+                BrowserCommandErrorCodes.AgentDisconnected);
 
             pendingPair.Completion.TrySetResult(CreateFailureResult(
                 pendingPair.Command,

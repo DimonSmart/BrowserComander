@@ -31,7 +31,13 @@
             });
 
             services.AddMcpServer()
-                .WithHttpTransport()
+                .WithHttpTransport(options =>
+                {
+                    // BrowserCommander exposes only server-owned tools and does not rely on
+                    // MCP session state. Stateless HTTP mode avoids stale MCP-Session-Id
+                    // failures when remote clients talk to the server through proxies/tunnels.
+                    options.Stateless = true;
+                })
                 .WithToolsFromAssembly(typeof(BrowserAutomationMcpTools).Assembly);
 
             services.AddSingleton<IBrowserAutomationService, BrowserAutomationService>();
@@ -47,6 +53,10 @@
                 context.Response.Headers[ServerIdentity.ResponseHeaderName] = ServerIdentity.ServiceName;
                 await next();
             });
+
+            app.UseWhen(
+                context => context.Request.Path.StartsWithSegments("/mcp"),
+                branch => branch.UseMiddleware<McpTransportLoggingMiddleware>());
 
             app.UseCors("AllowAll");
 

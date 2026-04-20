@@ -196,6 +196,10 @@ Point an MCP client at:
 http://localhost:5082/mcp
 ```
 
+BrowserCommander serves HTTP MCP in stateless mode. That keeps the transport
+more predictable through proxies and temporary tunnels because tool calls do not
+depend on a long-lived `MCP-Session-Id`.
+
 ### Temporary remote ChatGPT testing
 
 ChatGPT developer mode currently expects a remote MCP server URL, not `localhost`.
@@ -215,6 +219,7 @@ https://xxxxx.euw.devtunnels.ms/mcp
 
 For BrowserCommander, use `/mcp`, not `/mcp/sse`.
 Keep the extension options page pointed at `http://localhost:5082`; the tunnel URL is only for the remote ChatGPT connection.
+If a remote client reports `Resource not found` or `Session not found` after some successful calls, first confirm it is talking to the current server build and current tunnel URL.
 
 Security warning:
 

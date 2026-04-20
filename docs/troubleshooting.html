@@ -60,6 +60,18 @@
                 <li>If the tunnel was started with <span class="mono">--allow-anonymous</span>, choose <span class="mono">No Authentication</span> in ChatGPT.</li>
                 <li>Keep both <span class="mono">BrowserCommanderServer.exe</span> and the <span class="mono">devtunnel host</span> process running during the test.</li>
                 <li>Keep the extension options page on <span class="mono">http://localhost:5082</span>. The tunnel URL is only for the remote MCP client.</li>
+                <li>If ChatGPT starts showing <span class="mono">Resource not found</span> after earlier MCP calls succeeded, verify you are using the current tunnel URL and a recent BrowserCommander build. That symptom usually means the client is trying to reuse stale MCP HTTP session state through the tunnel.</li>
+            </ul>
+        </section>
+
+        <section class="content-card">
+            <h2>How to read the server log</h2>
+            <ul class="section-list">
+                <li><span class="mono">Outcome=stale_session_candidate</span> on an <span class="mono">MCP request completed</span> line means the request hit <span class="mono">/mcp</span> with an incoming <span class="mono">MCP-Session-Id</span> and got <span class="mono">404</span>. Usually the client reused stale MCP session state or an old tunnel URL.</li>
+                <li><span class="mono">Outcome=tunnel_reset_candidate</span> on an <span class="mono">MCP request completed</span> line means the HTTP request ended with abort, cancellation, or I/O failure before MCP finished. That points to a tunnel reset, proxy interruption, or client disconnect.</li>
+                <li><span class="mono">Extension disconnect detected while command ... was pending</span> means the browser extension lost its SignalR connection to the local server while a browser command was in flight. That is not an MCP HTTP transport failure.</li>
+                <li><span class="mono">Command ... timed out after ... while waiting for browser agent</span> means the HTTP path stayed alive, but the browser side did not complete the command in time.</li>
+                <li>If you see no new <span class="mono">MCP request started</span> line at all for the failing step, the request probably never reached BrowserCommanderServer. In that case the problem is outside the app, usually the tunnel or the ChatGPT-side connection state.</li>
             </ul>
         </section>
 
