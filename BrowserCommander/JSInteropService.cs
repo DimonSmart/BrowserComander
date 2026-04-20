@@ -40,4 +40,9 @@ public sealed class JSInteropService
     {
         return _jsRuntime.InvokeAsync<BackgroundAgentStatus>("clearAuthorizedTabs");
     }
+
+    public ValueTask<GlobalPagesResult> GetGlobalPagesAsync()
+    {
+        return _jsRuntime.InvokeAsync<GlobalPagesResult>("getGlobalPages");
+    }
 }

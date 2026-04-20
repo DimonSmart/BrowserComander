@@ -45,6 +45,7 @@ public static class BrowserCommandErrorCodes
     public const string ValidationFailed = "validation_failed";
     public const string AgentNotFound = "agent_not_found";
     public const string AgentDisconnected = "agent_disconnected";
+    public const string RequestAborted = "request_aborted";
     public const string Timeout = "timeout";
     public const string UnsupportedAction = "unsupported_action";
     public const string UnsupportedWaitState = "unsupported_wait_state";

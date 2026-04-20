@@ -23,14 +23,46 @@
         <textarea readonly class="styled-input" style="height: 70px;">@currentTabSummary</textarea>
         <p>Access: @(activeTabAuthorized ? "authorized" : "not authorized")</p>
 
-        <button type="button" @onclick="AuthorizeCurrentTabAsync" class="styled-button">Authorize Current Tab</button>
-        <button type="button" @onclick="RevokeCurrentTabAsync" class="styled-button">Revoke Current Tab</button>
-        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear Authorized Tabs</button>
+        <button type="button" @onclick="AuthorizeCurrentTabAsync" class="styled-button">Authorize Tab</button>
+        <button type="button" @onclick="RevokeCurrentTabAsync" class="styled-button">Revoke Tab</button>
+        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear All Tabs</button>
     </div>
 
+    <hr style="width: 100%; margin: 20px 0;" />
+
     <div class="popup-form">
-        <label for="allowedTabs">Authorized Tabs:</label>
-        <textarea id="allowedTabs" readonly class="styled-input" style="height: 100px;">@authorizedTabsSummary</textarea>
+        <label>All Authorized Tabs (@globalTabCount total across all browsers):</label>
+        @if (!string.IsNullOrEmpty(globalPagesError))
+        {
+            <p class="error-message" style="font-size: 0.85em;">@globalPagesError</p>
+        }
+        @if (globalPages.Count == 0 && string.IsNullOrEmpty(globalPagesError))
+        {
+            <p style="font-size: 0.85em; color: #888;">No tabs are authorized on any browser.</p>
+        }
+        @foreach (var tab in globalPages)
+        {
+            var isLocal = string.Equals(tab.AgentId, agentId, StringComparison.Ordinal);
+            var isActive = isLocal && activeTabId.HasValue && tab.TabId == activeTabId.Value;
+            var borderColor = isLocal ? "#2563EB" : "#aaa";
+            var browserLabel = tab.BrowserName ?? tab.AgentId;
+            <div style="border-left: 3px solid @borderColor; padding: 4px 8px; margin: 6px 0; font-size: 0.82em; word-break: break-all;">
+                @if (isActive)
+                {
+                    <span style="font-weight: bold; color: #2563EB;">[current tab] </span>
+                }
+                else if (isLocal)
+                {
+                    <span style="color: #2563EB;">[this browser] </span>
+                }
+                else
+                {
+                    <span style="color: #888;">[@browserLabel] </span>
+                }
+                <span>[tab @tab.TabId] @tab.Title</span><br />
+                <span style="color: #666;">@tab.Url</span>
+            </div>
+        }
     </div>
 </div>
 
@@ -43,9 +75,11 @@
     private bool backgroundConnected { get; set; }
     private int? activeTabId;
     private string currentTabSummary { get; set; } = "No active tab.";
-    private string authorizedTabsSummary { get; set; } = "No tabs are authorized.";
     private bool activeTabAuthorized { get; set; }
     private List<BrowserTabDescriptor> authorizedTabs { get; set; } = [];
+    private List<GlobalPageInfo> globalPages { get; set; } = [];
+    private string globalPagesError { get; set; } = string.Empty;
+    private int globalTabCount => globalPages.Count;
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,6 +87,7 @@
         await RefreshServerAddressAsync();
         await RefreshActiveTabAsync();
         await RefreshBackgroundStatusAsync();
+        await RefreshGlobalPagesAsync();
     }
 
     private async Task RefreshServerAddressAsync()
@@ -60,7 +95,7 @@
         try
         {
             var settings = await JSInteropService.GetServerAddressSettingsAsync();
-            serverAddress = settings.ServerAddress;
+            serverAddress = settings?.ServerAddress ?? string.Empty;
         }
         catch (Exception ex)
         {
@@ -96,6 +131,28 @@
         ApplyBackgroundStatus(status);
     }
 
+    private async Task RefreshGlobalPagesAsync()
+    {
+        try
+        {
+            var result = await JSInteropService.GetGlobalPagesAsync();
+            if (result is null || !result.Ok)
+            {
+                globalPagesError = result?.Error ?? "Failed to load global pages.";
+                globalPages = [];
+                return;
+            }
+
+            globalPagesError = string.Empty;
+            globalPages = result.Pages ?? [];
+        }
+        catch (Exception ex)
+        {
+            globalPagesError = "Failed to load global pages: " + ex.Message;
+            globalPages = [];
+        }
+    }
+
     private async Task AuthorizeCurrentTabAsync()
     {
         if (!activeTabId.HasValue)
@@ -106,6 +163,7 @@
 
         var status = await JSInteropService.AuthorizeTabAsync(activeTabId.Value);
         ApplyBackgroundStatus(status);
+        await RefreshGlobalPagesAsync();
     }
 
     private async Task RevokeCurrentTabAsync()
@@ -118,12 +176,14 @@
 
         var status = await JSInteropService.RevokeTabAsync(activeTabId.Value);
         ApplyBackgroundStatus(status);
+        await RefreshGlobalPagesAsync();
     }
 
     private async Task ClearAuthorizedTabsAsync()
     {
         var status = await JSInteropService.ClearAuthorizedTabsAsync();
         ApplyBackgroundStatus(status);
+        await RefreshGlobalPagesAsync();
     }
 
     private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
@@ -133,7 +193,6 @@
             backgroundConnected = false;
             agentId = string.Empty;
             authorizedTabs = [];
-            authorizedTabsSummary = "No tabs are authorized.";
             AppendError("Background agent did not respond.");
             UpdateActiveTabAuthorizationState();
             return;
@@ -142,11 +201,6 @@
         backgroundConnected = status.Ok && status.Connected;
         agentId = status.AgentId;
         authorizedTabs = status.AllowedTabs ?? [];
-        authorizedTabsSummary = authorizedTabs.Count == 0
-            ? "No tabs are authorized."
-            : string.Join(
-                "\n\n",
-                authorizedTabs.Select(tab => $"[{tab.TabId}] {tab.Title}\n{tab.Url}"));
 
         UpdateActiveTabAuthorizationState();
 

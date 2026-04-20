@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using BrowserCommander.Contracts;
 using Microsoft.AspNetCore.SignalR;
 
@@ -10,7 +11,8 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
     private readonly ConcurrentDictionary<string, BrowserAgentSession> _agentsById = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _agentIdsByConnection = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCommand> _pendingCommands = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _recentlyCompletedCommands = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, CompletedCommandRecord> _recentlyCompletedCommands = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string AgentId, int TabId), byte> _authorizedTabs = new();
     private readonly IHubContext<BrowserCommanderHub> _hubContext;
     private readonly ILogger<BrowserAutomationService> _logger;
 
@@ -30,13 +32,15 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
         }
 
         var now = DateTimeOffset.UtcNow;
+        var resolvedAgentId = ResolveOrCreateAgentId(connectionId, registration.AgentId);
 
         var session = _agentsById.AddOrUpdate(
-            registration.AgentId,
-            _ => BrowserAgentSession.FromRegistration(connectionId, registration, now),
+            resolvedAgentId,
+            _ => BrowserAgentSession.FromRegistration(resolvedAgentId, connectionId, registration, now),
             (_, existing) =>
             {
                 existing.ConnectionId = connectionId;
+                existing.ReportedAgentId = registration.AgentId;
                 existing.ExtensionId = registration.ExtensionId;
                 existing.BrowserName = registration.BrowserName;
                 existing.UserAgent = registration.UserAgent;
@@ -47,7 +51,16 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 return existing;
             });
 
-        _agentIdsByConnection[connectionId] = registration.AgentId;
+        _agentIdsByConnection[connectionId] = resolvedAgentId;
+
+        if (!string.Equals(resolvedAgentId, registration.AgentId, StringComparison.Ordinal))
+        {
+            _logger.LogWarning(
+                "Browser agent id collision detected. Reported agent {ReportedAgentId} on connection {ConnectionId} was assigned server session id {ResolvedAgentId}.",
+                registration.AgentId,
+                connectionId,
+                resolvedAgentId);
+        }
 
         _logger.LogInformation(
             "Registered browser agent {AgentId} on connection {ConnectionId} with {TabCount} tab(s).",
@@ -84,17 +97,39 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
 
         if (_pendingCommands.TryGetValue(result.CommandId, out var pendingCommand))
         {
-            pendingCommand.Completion.TrySetResult(result);
-            return;
+            _logger.LogInformation(
+                "Received completion result for command {CommandId} from connection {ConnectionId}. Success={Success}, ErrorCode={ErrorCode}.",
+                result.CommandId,
+                connectionId,
+                result.Success,
+                result.ErrorCode);
+
+            if (pendingCommand.Completion.TrySetResult(result))
+            {
+                return;
+            }
+
+            _logger.LogWarning(
+                "Completion result for command {CommandId} from connection {ConnectionId} arrived after the pending task had already been completed.",
+                result.CommandId,
+                connectionId);
         }
 
         CleanupCompletedCommands();
-        if (_recentlyCompletedCommands.TryRemove(result.CommandId, out _))
+        if (_recentlyCompletedCommands.TryRemove(result.CommandId, out var completedRecord))
         {
-            _logger.LogDebug(
-                "Ignored late result for already-completed command {CommandId} from connection {ConnectionId}.",
+            var lateByMilliseconds = Math.Max(
+                0,
+                (long)(DateTimeOffset.UtcNow - completedRecord.CompletedAtUtc).TotalMilliseconds);
+
+            _logger.LogWarning(
+                "Received late result for command {CommandId} from connection {ConnectionId}. OriginalOutcome={OriginalOutcome}, LateByMs={LateByMs}, ResultSuccess={Success}, ResultErrorCode={ErrorCode}.",
                 result.CommandId,
-                connectionId);
+                connectionId,
+                completedRecord.Outcome,
+                lateByMilliseconds,
+                result.Success,
+                result.ErrorCode);
             return;
         }
 
@@ -118,6 +153,12 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
 
         foreach (var pendingPair in _pendingCommands.Values.Where(command => command.ConnectionId == connectionId))
         {
+            _logger.LogWarning(
+                "Completing pending command {CommandId} as {ErrorCode} because connection {ConnectionId} disconnected.",
+                pendingPair.Command.CommandId,
+                BrowserCommandErrorCodes.AgentDisconnected,
+                connectionId);
+
             pendingPair.Completion.TrySetResult(CreateFailureResult(
                 pendingPair.Command,
                 BrowserCommandErrorCodes.AgentDisconnected,
@@ -137,6 +178,7 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
             .Select(agent => new BrowserAgentStatus
             {
                 AgentId = agent.AgentId,
+                ReportedAgentId = agent.ReportedAgentId,
                 ConnectionId = agent.ConnectionId,
                 ExtensionId = agent.ExtensionId,
                 BrowserName = agent.BrowserName,
@@ -154,18 +196,48 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
     {
         return _agentsById.Values
             .OrderBy(agent => agent.AgentId, StringComparer.Ordinal)
-            .SelectMany(agent => agent.Tabs.Select(tab => new BrowserPageSummary
-            {
-                PageId = BrowserPageRef.CreatePageId(agent.AgentId, tab.TabId),
-                AgentId = agent.AgentId,
-                TabId = tab.TabId,
-                WindowId = tab.WindowId,
-                Active = tab.Active,
-                Title = tab.Title,
-                Url = tab.Url
-            }))
+            .SelectMany(agent => agent.Tabs
+                .Where(tab => _authorizedTabs.ContainsKey((agent.AgentId, tab.TabId)))
+                .Select(tab => new BrowserPageSummary
+                {
+                    PageId = BrowserPageRef.CreatePageId(agent.AgentId, tab.TabId),
+                    AgentId = agent.AgentId,
+                    ReportedAgentId = agent.ReportedAgentId,
+                    BrowserName = agent.BrowserName,
+                    TabId = tab.TabId,
+                    WindowId = tab.WindowId,
+                    Active = tab.Active,
+                    Title = tab.Title,
+                    Url = tab.Url
+                }))
             .OrderBy(page => page.AgentId, StringComparer.Ordinal)
             .ThenBy(page => page.TabId)
+            .ToArray();
+    }
+
+    public void AuthorizeTab(string agentId, int tabId)
+    {
+        if (!string.IsNullOrWhiteSpace(agentId) && tabId > 0)
+        {
+            _authorizedTabs[(agentId, tabId)] = 0;
+        }
+    }
+
+    public void RevokeTab(string agentId, int tabId)
+    {
+        _authorizedTabs.TryRemove((agentId, tabId), out _);
+    }
+
+    public void ClearAllAuthorizations()
+    {
+        _authorizedTabs.Clear();
+    }
+
+    public IReadOnlyCollection<int> GetAuthorizedTabIds(string agentId)
+    {
+        return _authorizedTabs.Keys
+            .Where(k => string.Equals(k.AgentId, agentId, StringComparison.Ordinal))
+            .Select(k => k.TabId)
             .ToArray();
     }
 
@@ -177,6 +249,14 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 command,
                 BrowserCommandErrorCodes.AgentNotFound,
                 $"Browser agent '{command.AgentId}' is not connected.");
+        }
+
+        if (!_authorizedTabs.ContainsKey((command.AgentId, command.TabId)))
+        {
+            return CreateFailureResult(
+                command,
+                BrowserCommandErrorCodes.TabNotAuthorized,
+                $"Tab {command.TabId} on agent '{command.AgentId}' is not authorized.");
         }
 
         if (string.Equals(command.Action, BrowserCommandActions.ExecutePlan, StringComparison.Ordinal)
@@ -207,25 +287,87 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
                 $"Command '{command.CommandId}' is already pending.");
         }
 
+        var stopwatch = Stopwatch.StartNew();
+        var completionRecord = CompletedCommandRecord.Create(
+            DateTimeOffset.UtcNow,
+            BrowserCommandErrorCodes.ExecutionFailed);
+
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(command.TimeoutMs);
 
+            _logger.LogInformation(
+                "Dispatching command {CommandId} action {Action} to agent {AgentId} tab {TabId} on connection {ConnectionId} with timeout {TimeoutMs} ms.",
+                command.CommandId,
+                command.Action,
+                command.AgentId,
+                command.TabId,
+                agent.ConnectionId,
+                command.TimeoutMs);
+
             await _hubContext.Clients.Client(agent.ConnectionId)
                 .SendAsync(BrowserCommanderHubMethods.ExecuteCommand, command, cancellationToken);
 
-            return await pendingCommand.Completion.Task.WaitAsync(timeoutCts.Token);
+            _logger.LogInformation(
+                "Command {CommandId} was sent to agent {AgentId}; waiting for completion.",
+                command.CommandId,
+                command.AgentId);
+
+            var result = await pendingCommand.Completion.Task.WaitAsync(timeoutCts.Token);
+            completionRecord = CompletedCommandRecord.FromResult(DateTimeOffset.UtcNow, result);
+
+            _logger.LogInformation(
+                "Command {CommandId} completed after {ElapsedMs} ms. Success={Success}, ErrorCode={ErrorCode}.",
+                command.CommandId,
+                stopwatch.ElapsedMilliseconds,
+                result.Success,
+                result.ErrorCode);
+
+            return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            completionRecord = CompletedCommandRecord.Create(
+                DateTimeOffset.UtcNow,
+                BrowserCommandErrorCodes.Timeout);
+
+            _logger.LogWarning(
+                "Command {CommandId} timed out after {ElapsedMs} ms while waiting for browser agent {AgentId}.",
+                command.CommandId,
+                stopwatch.ElapsedMilliseconds,
+                command.AgentId);
+
             return CreateFailureResult(
                 command,
                 BrowserCommandErrorCodes.Timeout,
                 $"Timed out after {command.TimeoutMs} ms.");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            completionRecord = CompletedCommandRecord.Create(
+                DateTimeOffset.UtcNow,
+                BrowserCommandErrorCodes.RequestAborted);
+
+            _logger.LogInformation(
+                "Command {CommandId} was aborted by the caller after {ElapsedMs} ms. AgentId={AgentId}, TabId={TabId}, Action={Action}.",
+                command.CommandId,
+                stopwatch.ElapsedMilliseconds,
+                command.AgentId,
+                command.TabId,
+                command.Action);
+
+            return CreateFailureResult(
+                command,
+                BrowserCommandErrorCodes.RequestAborted,
+                "The caller canceled the request before the browser command completed.");
+        }
         catch (Exception exception)
         {
+            completionRecord = CompletedCommandRecord.Create(
+                DateTimeOffset.UtcNow,
+                BrowserCommandErrorCodes.ExecutionFailed);
+
             _logger.LogError(
                 exception,
                 "Failed to execute command {CommandId} on agent {AgentId}.",
@@ -240,21 +382,58 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
         finally
         {
             _pendingCommands.TryRemove(command.CommandId, out _);
-            _recentlyCompletedCommands[command.CommandId] = DateTimeOffset.UtcNow;
+            _recentlyCompletedCommands[command.CommandId] = completionRecord;
             CleanupCompletedCommands();
         }
     }
 
     private string? ResolveAgentId(string connectionId, string? declaredAgentId)
     {
-        if (!string.IsNullOrWhiteSpace(declaredAgentId))
+        if (_agentIdsByConnection.TryGetValue(connectionId, out var mappedAgentId))
+        {
+            return mappedAgentId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(declaredAgentId)
+            && _agentsById.TryGetValue(declaredAgentId, out var session)
+            && string.Equals(session.ConnectionId, connectionId, StringComparison.Ordinal))
         {
             return declaredAgentId;
         }
 
-        return _agentIdsByConnection.TryGetValue(connectionId, out var agentId)
-            ? agentId
-            : null;
+        return null;
+    }
+
+    private string ResolveOrCreateAgentId(string connectionId, string requestedAgentId)
+    {
+        if (_agentIdsByConnection.TryGetValue(connectionId, out var existingAgentId))
+        {
+            return existingAgentId;
+        }
+
+        if (!_agentsById.TryGetValue(requestedAgentId, out var existingSession)
+            || string.Equals(existingSession.ConnectionId, connectionId, StringComparison.Ordinal))
+        {
+            return requestedAgentId;
+        }
+
+        return CreateCollisionAgentId(requestedAgentId, connectionId);
+    }
+
+    private string CreateCollisionAgentId(string requestedAgentId, string connectionId)
+    {
+        var baseAgentId = $"{requestedAgentId}~{connectionId}";
+        var candidateAgentId = baseAgentId;
+        var suffix = 2;
+
+        while (_agentsById.TryGetValue(candidateAgentId, out var existingSession)
+               && !string.Equals(existingSession.ConnectionId, connectionId, StringComparison.Ordinal))
+        {
+            candidateAgentId = $"{baseAgentId}-{suffix}";
+            suffix++;
+        }
+
+        return candidateAgentId;
     }
 
     private static BrowserAutomationResult CreateFailureResult(
@@ -309,16 +488,37 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
 
         foreach (var entry in _recentlyCompletedCommands)
         {
-            if (entry.Value < cutoff)
+            if (entry.Value.CompletedAtUtc < cutoff)
             {
                 _recentlyCompletedCommands.TryRemove(entry.Key, out _);
             }
         }
     }
 
+    private sealed record CompletedCommandRecord(
+        DateTimeOffset CompletedAtUtc,
+        string Outcome)
+    {
+        public static CompletedCommandRecord Create(DateTimeOffset completedAtUtc, string outcome)
+        {
+            return new CompletedCommandRecord(completedAtUtc, outcome);
+        }
+
+        public static CompletedCommandRecord FromResult(DateTimeOffset completedAtUtc, BrowserAutomationResult result)
+        {
+            return new CompletedCommandRecord(
+                completedAtUtc,
+                result.Success
+                    ? "completed"
+                    : result.ErrorCode ?? BrowserCommandErrorCodes.ExecutionFailed);
+        }
+    }
+
     private sealed class BrowserAgentSession
     {
         public string AgentId { get; private init; } = string.Empty;
+
+        public string ReportedAgentId { get; set; } = string.Empty;
 
         public string ConnectionId { get; set; } = string.Empty;
 
@@ -339,13 +539,15 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
         public List<BrowserTabDescriptor> Tabs { get; set; } = [];
 
         public static BrowserAgentSession FromRegistration(
+            string agentId,
             string connectionId,
             BrowserAgentRegistration registration,
             DateTimeOffset now)
         {
             return new BrowserAgentSession
             {
-                AgentId = registration.AgentId,
+                AgentId = agentId,
+                ReportedAgentId = registration.AgentId,
                 ConnectionId = connectionId,
                 ExtensionId = registration.ExtensionId,
                 BrowserName = registration.BrowserName,

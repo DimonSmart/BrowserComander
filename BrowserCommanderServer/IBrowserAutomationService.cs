@@ -16,5 +16,13 @@ public interface IBrowserAutomationService
 
     IReadOnlyCollection<BrowserPageSummary> GetPages();
 
+    void AuthorizeTab(string agentId, int tabId);
+
+    void RevokeTab(string agentId, int tabId);
+
+    void ClearAllAuthorizations();
+
+    IReadOnlyCollection<int> GetAuthorizedTabIds(string agentId);
+
     Task<BrowserAutomationResult> ExecuteCommandAsync(BrowserAutomationCommand command, CancellationToken cancellationToken);
 }

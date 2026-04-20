@@ -6,6 +6,8 @@ public sealed class BrowserAgentStatus
 {
     public string AgentId { get; set; } = string.Empty;
 
+    public string ReportedAgentId { get; set; } = string.Empty;
+
     public string ConnectionId { get; set; } = string.Empty;
 
     public string? ExtensionId { get; set; }

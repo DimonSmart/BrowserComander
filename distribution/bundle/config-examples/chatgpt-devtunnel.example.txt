@@ -1,7 +1,7 @@
 ChatGPT remote test access through Microsoft Dev Tunnels
 
 Purpose
-- Make the local BrowserCommander MCP endpoint temporarily reachable from ChatGPT developer mode.
+- Make the local BrowserCommander MCP endpoint reachable from ChatGPT developer mode.
 
 Local prerequisites
 1. Start BrowserCommanderServer.exe locally.
@@ -9,19 +9,37 @@ Local prerequisites
    http://localhost:5082
 3. Authorize the browser tab you want BrowserCommander to control.
 
-Dev Tunnel commands
+Dev Tunnel commands (recommended: persistent named tunnel)
+Using a named tunnel gives you a STABLE, fixed URL that does not change between restarts.
+Run these ONCE to create the tunnel, then use the last command every time:
+
 1. Sign in to the Dev Tunnels CLI:
    devtunnel user login
-2. Start a temporary public tunnel:
+2. Create a named tunnel (one-time setup):
+   devtunnel create browsercommander --allow-anonymous
+3. Add the port (one-time setup):
+   devtunnel port create browsercommander -p 5082
+4. Start hosting (run each time):
+   devtunnel host browsercommander
+
+The URL will look like:
+  https://browsercommander-<suffix>.euw.devtunnels.ms/
+
+Alternative: temporary anonymous tunnel (URL changes on every restart)
    devtunnel host -p 5082 --allow-anonymous
 
-Take the HTTPS forwarding URL printed by Dev Tunnels and append /mcp.
+Take the HTTPS forwarding URL and append /mcp.
 
 Example
 - Tunnel output:
-  https://xxxxx.euw.devtunnels.ms/
+  https://browsercommander-xxxxx.euw.devtunnels.ms/
 - MCP URL for ChatGPT:
-  https://xxxxx.euw.devtunnels.ms/mcp
+  https://browsercommander-xxxxx.euw.devtunnels.ms/mcp
+
+Enable keepalive to prevent idle-timeout disconnects
+Edit appsettings.json (or set an env var) and set:
+  "TunnelKeepalive": { "Url": "https://browsercommander-xxxxx.euw.devtunnels.ms/health" }
+The server will ping /health every 4 minutes to keep the tunnel warm.
 
 ChatGPT app draft fields
 - Name:
@@ -29,12 +47,12 @@ ChatGPT app draft fields
 - Description:
   Inspect and control authorized tabs in a local Chromium browser through MCP.
 - MCP server URL:
-  https://xxxxx.euw.devtunnels.ms/mcp
+  https://browsercommander-xxxxx.euw.devtunnels.ms/mcp
 - Authentication:
   No Authentication
 
 Important notes
-- BrowserCommander currently exposes HTTP MCP at /mcp, not /mcp/sse.
+- BrowserCommander exposes HTTP MCP at /mcp (Streamable HTTP transport, not /mcp/sse).
 - The tunnel URL is only for ChatGPT. The extension itself should still use http://localhost:5082.
-- --allow-anonymous makes the forwarded MCP endpoint publicly reachable. Use it only for short-lived testing.
-- Stop the dev tunnel when the test is finished.
+- --allow-anonymous makes the forwarded MCP endpoint publicly reachable. Use it only for testing.
+- Stop the dev tunnel when the test session is finished.

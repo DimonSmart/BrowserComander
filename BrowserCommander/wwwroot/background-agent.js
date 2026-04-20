@@ -5,10 +5,14 @@ const SERVER_ADDRESS_KEY = 'browserCommander.serverAddress';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const DEBUGGER_BUFFER_LIMIT = 200;
 const BROWSER_COMMANDER_PROTOCOL_VERSION = '2';
+const MAX_PENDING_COMMAND_RESULTS = 50;
+const COMMAND_RESULT_MIN_RETRY_WINDOW_MS = 15000;
+const COMMAND_RESULT_RETRY_BUFFER_MS = 5000;
 const debuggerSessions = new Map();
 
 const state = {
   agentId: null,
+  browserName: null,
   connectPromise: null,
   connected: false,
   keepAliveTimer: null,
@@ -18,7 +22,9 @@ const state = {
   suppressReconnect: false,
   socket: null,
   socketBuffer: '',
-  authorizedTabIds: []
+  authorizedTabIds: [],
+  pendingCommandResults: [],
+  flushingPendingCommandResults: false
 };
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
@@ -71,7 +77,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     'setServerAddress',
     'authorizeTab',
     'revokeTab',
-    'clearAuthorizedTabs'
+    'clearAuthorizedTabs',
+    'getGlobalPages'
   ]);
 
   if (!supportedMessageTypes.has(message?.type)) {
@@ -83,6 +90,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       switch (message.type) {
         case 'getServerAddressSettings':
           sendResponse(await getServerAddressSettings());
+          return;
+        case 'getGlobalPages':
+          sendResponse(await getGlobalPages());
           return;
         case 'setServerAddress':
           await setConfiguredServerAddress(message.serverAddress);
@@ -136,10 +146,10 @@ void bootstrapAgent();
 
 async function bootstrapAgent() {
   state.agentId ??= await getOrCreateAgentId();
-  state.authorizedTabIds = await getStoredAuthorizedTabIds();
-  await pruneAuthorizedTabs();
+  state.authorizedTabIds = await fetchAuthorizedTabIdsFromServer();
   await ensureDebuggerSessionsForAuthorizedTabs();
   await ensureConnected();
+  await updateBadge();
 }
 
 async function ensureConnected() {
@@ -195,12 +205,12 @@ async function connectCore() {
           handshakeCompleted = true;
           state.connected = true;
           startKeepAlive();
-          void registerAgent();
+          void initializeConnectedSession();
           resolve();
           continue;
         }
 
-        void handleHubMessage(message);
+        void handleHubMessageSafe(message);
       }
     });
 
@@ -229,10 +239,12 @@ async function registerAgent() {
     return;
   }
 
+  state.browserName ??= await detectBrowserName();
+
   await sendInvocation('RegisterAgent', [{
     agentId: state.agentId,
     extensionId: chrome.runtime.id,
-    browserName: 'BrowserCommander',
+    browserName: state.browserName,
     userAgent: navigator.userAgent,
     protocolVersion: BROWSER_COMMANDER_PROTOCOL_VERSION,
     capabilities: {
@@ -243,6 +255,17 @@ async function registerAgent() {
     },
     tabs: await getAuthorizedTabsSnapshot()
   }]);
+}
+
+async function initializeConnectedSession() {
+  try {
+    await registerAgent();
+  } catch (error) {
+    console.warn('Failed to register browser agent after SignalR handshake.', error);
+    return;
+  }
+
+  await flushPendingCommandResults();
 }
 
 async function publishTabs() {
@@ -258,10 +281,22 @@ async function publishTabs() {
     return;
   }
 
-  await sendInvocation('UpdateTabs', [{
-    agentId: state.agentId,
-    tabs: await getAuthorizedTabsSnapshot()
-  }]);
+  try {
+    await sendInvocation('UpdateTabs', [{
+      agentId: state.agentId,
+      tabs: await getAuthorizedTabsSnapshot()
+    }]);
+  } catch (error) {
+    console.warn('Failed to publish authorized tabs to the server.', error);
+  }
+}
+
+async function handleHubMessageSafe(message) {
+  try {
+    await handleHubMessage(message);
+  } catch (error) {
+    console.warn('Unhandled failure while processing a SignalR hub message.', error);
+  }
 }
 
 async function handleHubMessage(message) {
@@ -274,8 +309,28 @@ async function handleHubMessage(message) {
     return;
   }
 
-  const result = await executeCommand(command);
-  await sendInvocation('CompleteCommand', [result]);
+  await executeCommandAndReportResult(command);
+}
+
+async function executeCommandAndReportResult(command) {
+  let result = null;
+
+  try {
+    result = await executeCommand(command);
+  } catch (error) {
+    console.warn(
+      `Command execution failed before a completion result was produced (${formatCommandLogContext(command)}).`,
+      error);
+    result = createUnexpectedCommandFailureResult(command, error);
+  }
+
+  try {
+    await sendCommandCompletion(result, command);
+  } catch (error) {
+    console.warn(
+      `Failed to send completion result (${formatCommandLogContext(result ?? command)}). Queued for retry.`,
+      error);
+  }
 }
 
 async function executeCommand(command) {
@@ -1929,6 +1984,85 @@ async function sendInvocation(target, args) {
   state.socket.send(JSON.stringify(payload) + RECORD_SEPARATOR);
 }
 
+async function sendCommandCompletion(result, command) {
+  try {
+    await sendInvocation('CompleteCommand', [result]);
+  } catch (error) {
+    queuePendingCommandResult(result, command);
+    throw error;
+  }
+}
+
+function queuePendingCommandResult(result, command) {
+  const commandTimeout = getCommandTimeout(command);
+  const expiresAt = Date.now() + Math.max(
+    COMMAND_RESULT_MIN_RETRY_WINDOW_MS,
+    commandTimeout + COMMAND_RESULT_RETRY_BUFFER_MS);
+
+  const entries = state.pendingCommandResults
+    .filter(entry => entry.commandId !== result?.commandId)
+    .filter(entry => entry.expiresAt > Date.now());
+
+  entries.push({
+    result,
+    commandId: result?.commandId ?? null,
+    action: result?.action ?? command?.action ?? null,
+    tabId: result?.tabId ?? command?.tabId ?? null,
+    expiresAt,
+    attempts: 1
+  });
+
+  if (entries.length > MAX_PENDING_COMMAND_RESULTS) {
+    const droppedEntries = entries.splice(0, entries.length - MAX_PENDING_COMMAND_RESULTS);
+    for (const droppedEntry of droppedEntries) {
+      console.warn(`Dropped queued completion result because the retry queue is full (${formatCommandLogContext(droppedEntry)}).`);
+    }
+  }
+
+  state.pendingCommandResults = entries;
+}
+
+async function flushPendingCommandResults() {
+  if (state.flushingPendingCommandResults
+    || state.pendingCommandResults.length === 0
+    || !state.socket
+    || state.socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  state.flushingPendingCommandResults = true;
+
+  try {
+    const queuedEntries = state.pendingCommandResults;
+    state.pendingCommandResults = [];
+
+    for (let index = 0; index < queuedEntries.length; index += 1) {
+      const entry = queuedEntries[index];
+      if (entry.expiresAt <= Date.now()) {
+        console.warn(`Dropped expired queued completion result (${formatCommandLogContext(entry)}).`);
+        continue;
+      }
+
+      try {
+        await sendInvocation('CompleteCommand', [entry.result]);
+      } catch (error) {
+        entry.attempts += 1;
+        state.pendingCommandResults = [
+          entry,
+          ...queuedEntries.slice(index + 1).filter(candidate => candidate.expiresAt > Date.now())
+        ];
+
+        console.warn(
+          `Failed to flush queued completion result (${formatCommandLogContext(entry)}).`,
+          error);
+        return;
+      }
+    }
+  } finally {
+    state.flushingPendingCommandResults = false;
+  }
+}
+
 async function getAuthorizedTabsSnapshot() {
   const tabs = await getTabsByIds(state.authorizedTabIds);
   return tabs.map(mapTabDescriptor);
@@ -1969,6 +2103,54 @@ function mapTabDescriptor(tab) {
   };
 }
 
+async function detectBrowserName() {
+  const brandNames = Array.isArray(navigator.userAgentData?.brands)
+    ? navigator.userAgentData.brands
+      .map(brand => brand?.brand?.trim())
+      .filter(Boolean)
+    : [];
+
+  if (brandNames.some(brand => brand.includes('Microsoft Edge'))) {
+    return 'Microsoft Edge';
+  }
+
+  if (brandNames.some(brand => brand.includes('Opera'))) {
+    return 'Opera';
+  }
+
+  if (brandNames.some(brand => brand.includes('Vivaldi'))) {
+    return 'Vivaldi';
+  }
+
+  if (typeof navigator.brave?.isBrave === 'function') {
+    try {
+      if (await navigator.brave.isBrave()) {
+        return 'Brave';
+      }
+    } catch {
+    }
+  }
+
+  const userAgent = navigator.userAgent ?? '';
+  if (userAgent.includes('Edg/')) {
+    return 'Microsoft Edge';
+  }
+
+  if (userAgent.includes('OPR/')) {
+    return 'Opera';
+  }
+
+  if (userAgent.includes('Vivaldi/')) {
+    return 'Vivaldi';
+  }
+
+  if (userAgent.includes('Chrome/')) {
+    return 'Google Chrome';
+  }
+
+  return 'Chromium';
+}
+
 async function getOrCreateAgentId() {
   const stored = await chrome.storage.local.get(AGENT_ID_KEY);
   const existingAgentId = stored?.[AGENT_ID_KEY];
@@ -1986,28 +2168,97 @@ async function getStoredAuthorizedTabIds() {
   return normalizeTabIds(stored?.[ALLOWED_TAB_IDS_KEY]);
 }
 
+async function fetchAuthorizedTabIdsFromServer() {
+  try {
+    const serverAddress = await getServerAddress();
+    const agentId = state.agentId;
+    if (!serverAddress || !agentId) {
+      return [];
+    }
+    const response = await fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(agentId)}`);
+    if (!response.ok) {
+      return [];
+    }
+    const tabIds = await response.json();
+    return normalizeTabIds(tabIds);
+  } catch (error) {
+    console.warn('Failed to fetch authorized tab IDs from the server.', error);
+    return [];
+  }
+}
+
 async function storeAuthorizedTabIds(tabIds) {
   state.authorizedTabIds = normalizeTabIds(tabIds);
-  await chrome.storage.local.set({ [ALLOWED_TAB_IDS_KEY]: state.authorizedTabIds });
+  await updateBadge();
+}
+
+async function updateBadge() {
+  const count = state.authorizedTabIds.length;
+  try {
+    await chrome.action.setBadgeText({ text: count > 0 ? count.toString() : '' });
+    if (count > 0) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#2563EB' });
+    }
+  } catch {
+    // Badge API may not be available in all environments
+  }
+}
+
+async function getGlobalPages() {
+  try {
+    const serverAddress = await getServerAddress();
+    const response = await fetch(`${serverAddress}/api/browser-automation/pages`);
+    if (!response.ok) {
+      return { ok: false, error: `Server returned HTTP ${response.status}.`, pages: [] };
+    }
+    const pages = await response.json();
+    return { ok: true, error: null, pages };
+  } catch (error) {
+    return { ok: false, error: String(error), pages: [] };
+  }
 }
 
 async function authorizeTab(tabId) {
   ensureValidTabId(tabId);
+  await tryEnsureDebuggerSession(tabId);
+  try {
+    const serverAddress = await getServerAddress();
+    await fetch(`${serverAddress}/api/browser-automation/authorizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId: state.agentId, tabId })
+    });
+  } catch {
+    // best-effort: server may be unreachable
+  }
   const nextTabIds = new Set(state.authorizedTabIds);
   nextTabIds.add(tabId);
   await storeAuthorizedTabIds([...nextTabIds]);
-  await tryEnsureDebuggerSession(tabId);
   await publishTabs();
 }
 
 async function revokeTab(tabId) {
   ensureValidTabId(tabId);
+  try {
+    const serverAddress = await getServerAddress();
+    await fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, {
+      method: 'DELETE'
+    });
+  } catch {
+    // best-effort
+  }
   await storeAuthorizedTabIds(state.authorizedTabIds.filter(candidate => candidate !== tabId));
   await detachDebuggerSession(tabId);
   await publishTabs();
 }
 
 async function clearAuthorizedTabs() {
+  try {
+    const serverAddress = await getServerAddress();
+    await fetch(`${serverAddress}/api/browser-automation/authorizations`, { method: 'DELETE' });
+  } catch {
+    // best-effort
+  }
   await storeAuthorizedTabIds([]);
   await Promise.allSettled([...debuggerSessions.keys()].map(tabId => detachDebuggerSession(tabId)));
   await publishTabs();
@@ -2018,6 +2269,15 @@ async function pruneAuthorizedTabs() {
   const existingTabIds = existingTabs.map(tab => tab.id);
   const removedTabIds = state.authorizedTabIds.filter(tabId => !existingTabIds.includes(tabId));
   if (!areSameIds(existingTabIds, state.authorizedTabIds)) {
+    // Revoke closed tabs from server
+    try {
+      const serverAddress = await getServerAddress();
+      await Promise.allSettled(removedTabIds.map(tabId =>
+        fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, { method: 'DELETE' })
+      ));
+    } catch {
+      // best-effort
+    }
     await storeAuthorizedTabIds(existingTabIds);
   }
 
@@ -2032,6 +2292,16 @@ async function removeMissingAuthorizedTabs(missingTabIds) {
   const missing = new Set(normalizeTabIds(missingTabIds));
   if (missing.size === 0) {
     return;
+  }
+
+  // Revoke closed tabs from server
+  try {
+    const serverAddress = await getServerAddress();
+    await Promise.allSettled([...missing].map(tabId =>
+      fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, { method: 'DELETE' })
+    ));
+  } catch {
+    // best-effort
   }
 
   const nextTabIds = state.authorizedTabIds.filter(tabId => !missing.has(tabId));
@@ -2220,6 +2490,22 @@ function parseHubMessages(rawData) {
   }
 
   return messages;
+}
+
+function createUnexpectedCommandFailureResult(command, error) {
+  return {
+    ...createBaseResult(command, normalizeAction(command?.action)),
+    errorCode: getErrorCode(error),
+    error: getErrorMessage(error)
+  };
+}
+
+function formatCommandLogContext(source) {
+  if (!source) {
+    return 'commandId=<unknown>, action=<unknown>, tabId=<unknown>';
+  }
+
+  return `commandId=${source.commandId ?? '<unknown>'}, action=${source.action ?? '<unknown>'}, tabId=${source.tabId ?? '<unknown>'}`;
 }
 
 function normalizeAction(action) {

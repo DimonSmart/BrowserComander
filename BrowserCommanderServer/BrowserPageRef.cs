@@ -8,7 +8,7 @@ public readonly record struct BrowserPageRef(string AgentId, int TabId)
 
     public static string CreatePageId(string agentId, int tabId)
     {
-        return $"{Prefix}:{agentId}:{tabId}";
+        return $"{Prefix}:{Uri.EscapeDataString(agentId)}:{tabId}";
     }
 
     public static bool TryParse(string? pageId, out BrowserPageRef pageRef)
@@ -30,7 +30,7 @@ public readonly record struct BrowserPageRef(string AgentId, int TabId)
             return false;
         }
 
-        pageRef = new BrowserPageRef(parts[1], tabId);
+        pageRef = new BrowserPageRef(Uri.UnescapeDataString(parts[1]), tabId);
         return true;
     }
 }

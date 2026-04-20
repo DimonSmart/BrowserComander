@@ -61,7 +61,7 @@ Release process documentation for maintainers lives in `docs/release-plan.md`.
 The server currently exposes these MCP tools:
 
 - `browser_list_pages`
-  Lists explicitly authorized pages and returns `pageId` values used by the other tools.
+  Lists explicitly authorized pages, including the browser name, and returns `pageId` values used by the other tools.
 - `browser_list_viewport_presets`
   Lists the built-in phone viewport presets that can be applied to an authorized page. These presets change viewport size only.
 - `page_url`
@@ -119,7 +119,7 @@ The server currently exposes these MCP tools:
 - `locator_wait_for`
   Waits for `attached`, `detached`, `visible`, or `hidden`.
 
-This is now a first page/locator layer rather than a raw `agentId + tabId + selector` RPC surface, but it is still not a full Playwright-equivalent API.
+This is now a first page/locator layer rather than a raw `browserSessionId + tabId + selector` RPC surface, but it is still not a full Playwright-equivalent API.
 
 ## Server-driven execution plans
 
@@ -278,7 +278,7 @@ Proposed `page_outline` response shape:
 
 ```json
 {
-  "pageId": "page:<agentId>:<tabId>",
+  "pageId": "page:<browserSessionId>:<tabId>",
   "scopeSelector": "body",
   "url": "https://example.com/app",
   "title": "Orders",
@@ -340,7 +340,7 @@ Proposed `page_read` response shape:
 
 ```json
 {
-  "pageId": "page:<agentId>:<tabId>",
+  "pageId": "page:<browserSessionId>:<tabId>",
   "selector": "table[aria-label=\"Orders\"]",
   "format": "text",
   "truncated": true,

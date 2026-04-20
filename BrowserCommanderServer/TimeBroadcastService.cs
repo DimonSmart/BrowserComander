@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
@@ -20,17 +20,20 @@ namespace BrowserCommanderServer
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Run the loop until the service is stopped
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                var currentTime = DateTime.Now.ToString("O"); // ISO 8601 format
-                _logger.LogInformation("Broadcasting current time: {CurrentTime}", currentTime);
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    var currentTime = DateTime.Now.ToString("O");
+                    _logger.LogInformation("Broadcasting current time: {CurrentTime}", currentTime);
 
-                // Send the current time to all connected clients
-                await _hubContext.Clients.All.SendAsync("ReceiveTime", currentTime);
-
-                // Wait for one minute
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                    await _hubContext.Clients.All.SendAsync("ReceiveTime", currentTime, stoppingToken);
+                    await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                // Host shutdown is expected and should not be reported as a background-service failure.
             }
         }
     }

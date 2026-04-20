@@ -71,10 +71,10 @@
         try
         {
             var settings = await JSInteropService.GetServerAddressSettingsAsync();
-            effectiveServerAddress = string.IsNullOrWhiteSpace(settings.ServerAddress)
+            effectiveServerAddress = string.IsNullOrWhiteSpace(settings?.ServerAddress)
                 ? defaultServerAddress
                 : settings.ServerAddress;
-            defaultServerAddress = string.IsNullOrWhiteSpace(settings.DefaultServerAddress)
+            defaultServerAddress = string.IsNullOrWhiteSpace(settings?.DefaultServerAddress)
                 ? defaultServerAddress
                 : settings.DefaultServerAddress;
             serverAddressInput = effectiveServerAddress;
@@ -97,17 +97,23 @@
         {
             var backgroundStatus = await JSInteropService.SetServerAddressAsync(serverAddressInput);
             var settings = await JSInteropService.GetServerAddressSettingsAsync();
-            effectiveServerAddress = settings.ServerAddress;
-            defaultServerAddress = settings.DefaultServerAddress;
+            effectiveServerAddress = string.IsNullOrWhiteSpace(settings?.ServerAddress)
+                ? serverAddressInput
+                : settings.ServerAddress;
+            defaultServerAddress = string.IsNullOrWhiteSpace(settings?.DefaultServerAddress)
+                ? defaultServerAddress
+                : settings.DefaultServerAddress;
             serverAddressInput = effectiveServerAddress;
             ApplyBackgroundStatus(backgroundStatus);
 
-            saveFailed = !backgroundStatus.Ok;
-            statusMessage = backgroundStatus.Ok && backgroundStatus.Connected
-                ? "Saved. Background agent reconnected."
-                : backgroundStatus.Ok
-                    ? "Saved. Background agent is not connected yet."
-                    : "Saved, but reconnect failed: " + backgroundStatus.Error;
+            saveFailed = backgroundStatus is null || !backgroundStatus.Ok;
+            statusMessage = backgroundStatus switch
+            {
+                null => "Saved, but the background agent did not respond.",
+                { Ok: true, Connected: true } => "Saved. Background agent reconnected.",
+                { Ok: true } => "Saved. Background agent is not connected yet.",
+                _ => "Saved, but reconnect failed: " + GetErrorText(backgroundStatus.Error)
+            };
         }
         catch (Exception ex)
         {
@@ -128,8 +134,19 @@
 
     private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
     {
-        backgroundStatusText = status is not null && status.Ok && status.Connected
-            ? "Connected"
-            : "Disconnected";
+        backgroundStatusText = status switch
+        {
+            null => "Unavailable",
+            { Ok: true, Connected: true } => "Connected",
+            { Ok: false } => "Unavailable",
+            _ => "Disconnected"
+        };
+    }
+
+    private static string GetErrorText(string? error)
+    {
+        return string.IsNullOrWhiteSpace(error)
+            ? "The background agent did not provide an error message."
+            : error;
     }
 }

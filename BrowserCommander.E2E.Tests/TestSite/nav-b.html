@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BrowserCommander E2E Nav B</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(160deg, #e9f9ff 0%, #f5fffd 100%);
+            font-family: "Segoe UI", sans-serif;
+            color: #17394a;
+        }
+
+        main {
+            width: min(680px, calc(100vw - 32px));
+            padding: 24px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 24px 70px rgba(33, 79, 109, 0.12);
+        }
+
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #2d8db8;
+            color: #fff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Navigation Page B</h1>
+        <p id="nav-b-marker">This is page B.</p>
+        <a id="nav-b-to-index" href="/index.html">Back To Index</a>
+    </main>
+    <script>
+        console.log("nav-b-ready");
+    </script>
+</body>
+</html>

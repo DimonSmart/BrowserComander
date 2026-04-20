@@ -26,6 +26,38 @@ public class BrowserAutomationController : ControllerBase
         return Ok(_browserAutomationService.GetPages());
     }
 
+    [HttpGet("authorizations/{agentId}")]
+    public ActionResult<IReadOnlyCollection<int>> GetAuthorizations(string agentId)
+    {
+        return Ok(_browserAutomationService.GetAuthorizedTabIds(agentId));
+    }
+
+    [HttpPost("authorizations")]
+    public ActionResult AuthorizeTab([FromBody] TabAuthorizationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.AgentId) || request.TabId <= 0)
+        {
+            return BadRequest("agentId and tabId are required.");
+        }
+
+        _browserAutomationService.AuthorizeTab(request.AgentId, request.TabId);
+        return NoContent();
+    }
+
+    [HttpDelete("authorizations/{agentId}/{tabId:int}")]
+    public ActionResult RevokeTab(string agentId, int tabId)
+    {
+        _browserAutomationService.RevokeTab(agentId, tabId);
+        return NoContent();
+    }
+
+    [HttpDelete("authorizations")]
+    public ActionResult ClearAllAuthorizations()
+    {
+        _browserAutomationService.ClearAllAuthorizations();
+        return NoContent();
+    }
+
     [HttpPost("commands")]
     public async Task<ActionResult<BrowserAutomationResult>> ExecuteCommand(
         [FromBody] BrowserAutomationCommand command,
@@ -116,6 +148,7 @@ public class BrowserAutomationController : ControllerBase
         {
             BrowserCommandErrorCodes.AgentNotFound or BrowserCommandErrorCodes.AgentDisconnected => NotFound(result),
             BrowserCommandErrorCodes.TabNotAuthorized => StatusCode(StatusCodes.Status403Forbidden, result),
+            BrowserCommandErrorCodes.RequestAborted => StatusCode(StatusCodes.Status408RequestTimeout, result),
             BrowserCommandErrorCodes.Timeout => StatusCode(StatusCodes.Status504GatewayTimeout, result),
             BrowserCommandErrorCodes.ValidationFailed => BadRequest(result),
             _ => StatusCode(StatusCodes.Status502BadGateway, result)
@@ -373,5 +406,12 @@ public class BrowserAutomationController : ControllerBase
         public string Selector { get; set; } = "html";
 
         public int TimeoutMs { get; set; } = 10000;
+    }
+
+    public sealed class TabAuthorizationRequest
+    {
+        public string AgentId { get; set; } = string.Empty;
+
+        public int TabId { get; set; }
     }
 }

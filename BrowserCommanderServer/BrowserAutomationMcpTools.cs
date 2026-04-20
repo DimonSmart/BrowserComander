@@ -1106,7 +1106,7 @@ public static class BrowserAutomationMcpTools
 
     private static string CreateInvalidPageIdMessage(string? pageId)
     {
-        return $"Invalid pageId '{pageId}'. Expected the exact value returned by browser_list_pages, for example 'page:<agentId>:<tabId>', or use 'current' when a single page is available.";
+        return $"Invalid pageId '{pageId}'. Expected the exact value returned by browser_list_pages, for example 'page:<browserSessionId>:<tabId>', or use 'current' when a single page is available.";
     }
 
     private static List<TItem> DeserializeList<TItem>(string? json)

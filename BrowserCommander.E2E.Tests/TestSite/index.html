@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BrowserCommander E2E Index</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: "Segoe UI", sans-serif;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(165deg, #eef6ff 0%, #f5fff6 100%);
+            color: #182436;
+        }
+
+        main {
+            width: min(960px, calc(100vw - 32px));
+            margin: 24px auto;
+            padding: 24px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 24px 70px rgba(34, 62, 99, 0.12);
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        .stack {
+            display: grid;
+            gap: 20px;
+        }
+
+        .panel {
+            padding: 18px;
+            border: 1px solid #d8e3f2;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 248, 255, 0.96));
+        }
+
+        .grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .grid.two {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        input, textarea, button {
+            font: inherit;
+            box-sizing: border-box;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #c8d5e8;
+            border-radius: 12px;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        button, a.button-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 44px;
+            padding: 10px 14px;
+            border: 1px solid #2f67b3;
+            border-radius: 12px;
+            background: #2f67b3;
+            color: #fff;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .muted {
+            color: #56657a;
+            font-size: 14px;
+        }
+
+        .rich-text strong {
+            color: #0b5a8a;
+        }
+
+        .badge-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .counted-item {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #e5eefc;
+        }
+
+        .status-line {
+            min-height: 24px;
+            font-weight: 600;
+        }
+
+        .is-hidden {
+            display: none;
+        }
+
+        .drag-layout {
+            display: grid;
+            gap: 18px;
+        }
+
+        .drag-source {
+            width: 160px;
+            padding: 16px 18px;
+            border: 1px solid #2e65b0;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #2e65b0, #4f8fe0);
+            color: #fff;
+            font-weight: 700;
+            text-align: center;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .drag-source:active {
+            cursor: grabbing;
+        }
+
+        .drop-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        }
+
+        .drop-zone {
+            min-height: 120px;
+            padding: 16px;
+            border: 2px dashed #8ea9cc;
+            border-radius: 18px;
+            background: rgba(236, 244, 255, 0.9);
+            display: grid;
+            align-content: start;
+            gap: 8px;
+        }
+
+        .drop-zone[data-last-drop="true"] {
+            border-style: solid;
+            border-color: #2e8b57;
+            background: rgba(228, 248, 235, 0.95);
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>BrowserCommander E2E Index</h1>
+        <p class="muted">This page intentionally exposes deterministic DOM state for BrowserCommander MCP end-to-end tests.</p>
+
+        <div class="stack">
+            <section class="panel">
+                <h2>Interactive Controls</h2>
+                <div class="grid">
+                    <button id="click-target" type="button" data-click-count="0">Button 1</button>
+                    <p id="click-status" class="status-line" data-click-count="0">Click count: 0</p>
+                    <input id="fill-input" type="text" placeholder="Fill input placeholder" aria-label="Search field" />
+                    <textarea id="fill-textarea" placeholder="Fill textarea placeholder"></textarea>
+                    <input id="press-target" type="text" placeholder="Press target" />
+                    <p id="press-status" class="status-line" data-last-key="">Last key: none</p>
+                    <div id="rich-text" class="rich-text"><strong>Rich</strong> text value</div>
+                    <div class="badge-list">
+                        <span class="counted-item">alpha</span>
+                        <span class="counted-item">beta</span>
+                        <span class="counted-item">gamma</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Locator States</h2>
+                <p class="muted">These controls help verify attached, detached, visible, and hidden wait states.</p>
+                <div class="grid two">
+                    <div>
+                        <button id="show-hidden-button" type="button">Show Hidden Target</button>
+                        <button id="hide-visible-button" type="button">Hide Visible Target</button>
+                        <div id="hidden-target-state" class="is-hidden">Hidden target now visible.</div>
+                        <div id="visible-target-state">Visible target awaiting hide.</div>
+                    </div>
+                    <div>
+                        <button id="attach-detached-button" type="button">Attach Detached Target</button>
+                        <button id="detach-attached-button" type="button">Detach Attached Target</button>
+                        <div id="detached-container"></div>
+                        <div id="attached-container">
+                            <div id="attached-target">Attached target ready.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Console And Network</h2>
+                <div class="grid two">
+                    <button id="emit-console-button" type="button">Emit Console</button>
+                    <button id="emit-error-button" type="button">Emit Error</button>
+                    <button id="send-fetch-button" type="button">Send Fetch</button>
+                    <button id="send-xhr-button" type="button">Send XHR</button>
+                    <button id="load-image-button" type="button">Load Image</button>
+                    <img id="network-image" alt="network image target" />
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Navigation</h2>
+                <div class="grid two">
+                    <a id="nav-a-link" class="button-link" href="/nav-a.html">Open Nav A</a>
+                    <a id="nav-b-link" class="button-link" href="/nav-b.html">Open Nav B</a>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Mouse Drag</h2>
+                <p class="muted">The drag source accepts left, middle, and right mouse buttons.</p>
+                <div class="drag-layout">
+                    <div id="drag-source" class="drag-source">Drag Source</div>
+                    <div class="drop-grid">
+                        <section id="drop-left" class="drop-zone" data-accept-button="0" data-drop-count="0" data-last-drop="false">
+                            <strong>Left Button</strong>
+                            <div class="muted">Accepts button 0</div>
+                            <div class="drop-state">Waiting for drop.</div>
+                        </section>
+                        <section id="drop-middle" class="drop-zone" data-accept-button="1" data-drop-count="0" data-last-drop="false">
+                            <strong>Middle Button</strong>
+                            <div class="muted">Accepts button 1</div>
+                            <div class="drop-state">Waiting for drop.</div>
+                        </section>
+                        <section id="drop-right" class="drop-zone" data-accept-button="2" data-drop-count="0" data-last-drop="false">
+                            <strong>Right Button</strong>
+                            <div class="muted">Accepts button 2</div>
+                            <div class="drop-state">Waiting for drop.</div>
+                        </section>
+                    </div>
+                    <p id="drag-status" class="status-line"
+                       data-last-result="idle"
+                       data-last-button=""
+                       data-last-target=""
+                       data-move-count="0">Waiting for drag.</p>
+                    <div id="hidden-source" class="drag-source is-hidden">Hidden Source</div>
+                    <section id="hidden-drop-target" class="drop-zone is-hidden" data-accept-button="0" data-drop-count="0" data-last-drop="false">
+                        <strong>Hidden Target</strong>
+                    </section>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        (() => {
+            const hiddenTargetState = document.getElementById("hidden-target-state");
+            const visibleTargetState = document.getElementById("visible-target-state");
+            const detachedContainer = document.getElementById("detached-container");
+            const attachedContainer = document.getElementById("attached-container");
+            const clickTarget = document.getElementById("click-target");
+            const clickStatus = document.getElementById("click-status");
+            const pressStatus = document.getElementById("press-status");
+            const dragSource = document.getElementById("drag-source");
+            const dragStatus = document.getElementById("drag-status");
+            const dropZones = Array.from(document.querySelectorAll(".drop-zone"));
+            const buttonNames = ["left", "middle", "right"];
+            let activeDrag = null;
+
+            function createDetachedTarget() {
+                const element = document.createElement("div");
+                element.id = "detached-target";
+                element.textContent = "Detached target attached.";
+                return element;
+            }
+
+            function attachDetachedTarget() {
+                if (!document.getElementById("detached-target") && detachedContainer) {
+                    detachedContainer.appendChild(createDetachedTarget());
+                }
+            }
+
+            function detachAttachedTarget() {
+                document.getElementById("attached-target")?.remove();
+            }
+
+            function attachAttachedTarget() {
+                if (attachedContainer && !document.getElementById("attached-target")) {
+                    const element = document.createElement("div");
+                    element.id = "attached-target";
+                    element.textContent = "Attached target ready.";
+                    attachedContainer.appendChild(element);
+                }
+            }
+
+            window.browserCommanderE2E = {
+                scheduleShowHidden(delayMs = 250) {
+                    setTimeout(() => hiddenTargetState?.classList.remove("is-hidden"), delayMs);
+                },
+                scheduleHideVisible(delayMs = 250) {
+                    setTimeout(() => visibleTargetState?.classList.add("is-hidden"), delayMs);
+                },
+                scheduleDetachAttached(delayMs = 250) {
+                    setTimeout(detachAttachedTarget, delayMs);
+                },
+                scheduleAttachDetached(delayMs = 250) {
+                    setTimeout(attachDetachedTarget, delayMs);
+                }
+            };
+
+            if (clickTarget instanceof HTMLButtonElement && clickStatus instanceof HTMLElement) {
+                clickTarget.addEventListener("click", () => {
+                    const nextCount = Number(clickTarget.dataset.clickCount ?? "0") + 1;
+                    clickTarget.dataset.clickCount = String(nextCount);
+                    clickStatus.dataset.clickCount = String(nextCount);
+                    clickStatus.textContent = `Click count: ${nextCount}`;
+                });
+            }
+
+            document.addEventListener("keydown", event => {
+                if (pressStatus instanceof HTMLElement) {
+                    pressStatus.dataset.lastKey = event.key;
+                    pressStatus.textContent = `Last key: ${event.key}`;
+                }
+            });
+
+            document.getElementById("show-hidden-button")?.addEventListener("click", () => hiddenTargetState?.classList.remove("is-hidden"));
+            document.getElementById("hide-visible-button")?.addEventListener("click", () => visibleTargetState?.classList.add("is-hidden"));
+            document.getElementById("attach-detached-button")?.addEventListener("click", attachDetachedTarget);
+            document.getElementById("detach-attached-button")?.addEventListener("click", detachAttachedTarget);
+
+            document.getElementById("emit-console-button")?.addEventListener("click", () => {
+                console.log("browsercommander-e2e-console");
+            });
+
+            document.getElementById("emit-error-button")?.addEventListener("click", () => {
+                console.error("browsercommander-e2e-error");
+            });
+
+            document.getElementById("send-fetch-button")?.addEventListener("click", async () => {
+                const response = await fetch(`/api/network/fetch?tick=${Date.now()}`);
+                await response.json();
+            });
+
+            document.getElementById("send-xhr-button")?.addEventListener("click", () => {
+                const xhr = new XMLHttpRequest();
+                xhr.open("GET", `/api/network/xhr?tick=${Date.now()}`);
+                xhr.send();
+            });
+
+            document.getElementById("load-image-button")?.addEventListener("click", () => {
+                const image = document.getElementById("network-image");
+                if (image instanceof HTMLImageElement) {
+                    image.src = `/api/network/image.png?tick=${Date.now()}`;
+                }
+            });
+
+            if (dragSource instanceof HTMLElement && dragStatus instanceof HTMLElement) {
+                dragSource.addEventListener("mousedown", event => {
+                    activeDrag = {
+                        button: event.button,
+                        moveCount: 0
+                    };
+
+                    dragStatus.dataset.lastResult = "dragging";
+                    dragStatus.dataset.lastButton = buttonNames[event.button] ?? String(event.button);
+                    dragStatus.dataset.lastTarget = "";
+                    dragStatus.dataset.moveCount = "0";
+                    dragStatus.textContent = `Dragging with ${dragStatus.dataset.lastButton}.`;
+                    event.preventDefault();
+                });
+
+                document.addEventListener("mousemove", event => {
+                    if (!activeDrag) {
+                        return;
+                    }
+
+                    activeDrag.moveCount += 1;
+                    dragStatus.dataset.moveCount = String(activeDrag.moveCount);
+                    dragStatus.textContent = `Dragging with ${buttonNames[activeDrag.button] ?? activeDrag.button}: ${activeDrag.moveCount} move(s).`;
+                    event.preventDefault();
+                }, true);
+
+                document.addEventListener("mouseup", event => {
+                    if (!activeDrag) {
+                        return;
+                    }
+
+                    const dropZone = document.elementFromPoint(event.clientX, event.clientY)?.closest(".drop-zone");
+                    const expectedButton = Number(dropZone?.getAttribute("data-accept-button"));
+                    const moveCount = activeDrag.moveCount;
+                    const buttonName = buttonNames[activeDrag.button] ?? String(activeDrag.button);
+
+                    for (const zone of dropZones) {
+                        zone.setAttribute("data-last-drop", "false");
+                    }
+
+                    if (dropZone instanceof HTMLElement
+                        && expectedButton === activeDrag.button
+                        && moveCount > 0) {
+                        const nextCount = Number(dropZone.dataset.dropCount ?? "0") + 1;
+                        dropZone.dataset.dropCount = String(nextCount);
+                        dropZone.dataset.lastDrop = "true";
+                        dropZone.querySelector(".drop-state").textContent = `Accepted ${buttonName} drag (${nextCount}).`;
+
+                        dragStatus.dataset.lastResult = "success";
+                        dragStatus.dataset.lastButton = buttonName;
+                        dragStatus.dataset.lastTarget = dropZone.id;
+                        dragStatus.dataset.moveCount = String(moveCount);
+                        dragStatus.textContent = `${buttonName} drag dropped into ${dropZone.id} after ${moveCount} move(s).`;
+                    } else {
+                        dragStatus.dataset.lastResult = "miss";
+                        dragStatus.dataset.lastButton = buttonName;
+                        dragStatus.dataset.lastTarget = dropZone instanceof HTMLElement ? dropZone.id : "";
+                        dragStatus.dataset.moveCount = String(moveCount);
+                        dragStatus.textContent = `Missed ${buttonName} drag after ${moveCount} move(s).`;
+                    }
+
+                    activeDrag = null;
+                    event.preventDefault();
+                }, true);
+
+                document.addEventListener("contextmenu", event => {
+                    if (event.target instanceof Element
+                        && event.target.closest("#drag-source, .drop-zone")) {
+                        event.preventDefault();
+                    }
+                });
+            }
+
+            console.log("index-ready");
+        })();
+    </script>
+</body>
+</html>

@@ -36,11 +36,18 @@
 
             services.AddSingleton<IBrowserAutomationService, BrowserAutomationService>();
             services.AddHostedService<TimeBroadcastService>();
+            services.AddHostedService<TunnelKeepaliveService>();
             services.AddControllers();
         }
 
         public void Configure(IApplicationBuilder app)
         {
+            app.Use(async (context, next) =>
+            {
+                context.Response.Headers[ServerIdentity.ResponseHeaderName] = ServerIdentity.ServiceName;
+                await next();
+            });
+
             app.UseCors("AllowAll");
 
             app.UseRouting();
@@ -50,6 +57,8 @@
                 endpoints.MapControllers();
                 endpoints.MapHub<BrowserCommanderHub>("/browserCommanderHub");
                 endpoints.MapMcp("/mcp");
+                endpoints.MapGet("/health", () => Results.Ok(new { status = "ok", service = ServerIdentity.ServiceName }));
+                endpoints.MapGet("/whoami", () => Results.Ok(new { service = ServerIdentity.ServiceName }));
             });
         }
     }

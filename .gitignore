@@ -370,3 +370,4 @@ FodyWeavers.xsd
 
 # Local installation and publication experiments
 install-test/
+/.dotnet/.dotnet
