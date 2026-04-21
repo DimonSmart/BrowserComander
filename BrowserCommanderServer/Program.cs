@@ -2,6 +2,8 @@ namespace BrowserCommanderServer
 {
     public class Program
     {
+        private const string ForceReadOnlyHintsSwitch = "--mcp-force-readonly-hints";
+
         public static async Task<int> Main(string[] args)
         {
             using var host = CreateHostBuilder(args).Build();
@@ -26,6 +28,16 @@ namespace BrowserCommanderServer
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration(configuration =>
+                {
+                    if (args.Contains(ForceReadOnlyHintsSwitch, StringComparer.OrdinalIgnoreCase))
+                    {
+                        configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            [McpToolPresentationOptions.ForceReadOnlyHintsConfigurationPath] = bool.TrueString
+                        });
+                    }
+                })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     webBuilder.UseStartup<Startup>();

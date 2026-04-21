@@ -1,9 +1,21 @@
-﻿namespace BrowserCommanderServer
+namespace BrowserCommanderServer
 {
     public class Startup
     {
+        private readonly IConfiguration _configuration;
+
+        public Startup(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         public void ConfigureServices(IServiceCollection services)
         {
+            var toolPresentationOptions = _configuration
+                .GetSection(McpToolPresentationOptions.SectionName)
+                .Get<McpToolPresentationOptions>()
+                ?? new McpToolPresentationOptions();
+
             services.AddLogging(logging =>
             {
                 logging.ClearProviders();
@@ -30,6 +42,8 @@
                 });
             });
 
+            var toolCatalog = new BrowserCommanderHttpToolCatalog(toolPresentationOptions);
+
             services.AddMcpServer()
                 .WithHttpTransport(options =>
                 {
@@ -38,7 +52,7 @@
                     // failures when remote clients talk to the server through proxies/tunnels.
                     options.Stateless = true;
                 })
-                .WithToolsFromAssembly(typeof(BrowserAutomationMcpTools).Assembly);
+                .WithTools(toolCatalog.Tools);
 
             services.AddSingleton<IBrowserAutomationService, BrowserAutomationService>();
             services.AddHostedService<TimeBroadcastService>();

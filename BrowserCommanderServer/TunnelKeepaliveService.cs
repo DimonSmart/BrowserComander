@@ -64,9 +64,9 @@ namespace BrowserCommanderServer
                     catch (Exception ex)
                     {
                         _logger.LogWarning(
-                            ex,
-                            "TunnelKeepaliveService: ping to {Url} failed.",
-                            _url);
+                            "TunnelKeepaliveService: ping to {Url} failed: {Error}",
+                            _url,
+                            ex.Message);
                     }
                 }
             }

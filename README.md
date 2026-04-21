@@ -206,6 +206,12 @@ ChatGPT developer mode currently expects a remote MCP server URL, not `localhost
 For BrowserCommander, a practical test setup is to place a temporary HTTPS tunnel in front of the local HTTP MCP endpoint:
 
 ```powershell
+BrowserCommanderServer.exe --mcp-force-readonly-hints
+```
+
+Then start the tunnel:
+
+```powershell
 devtunnel user login
 devtunnel host -p 5082 --allow-anonymous
 ```
@@ -220,6 +226,13 @@ https://xxxxx.euw.devtunnels.ms/mcp
 For BrowserCommander, use `/mcp`, not `/mcp/sse`.
 Keep the extension options page pointed at `http://localhost:5082`; the tunnel URL is only for the remote ChatGPT connection.
 If a remote client reports `Resource not found` or `Session not found` after some successful calls, first confirm it is talking to the current server build and current tunnel URL.
+If ChatGPT keeps asking for confirmation on non-destructive browser actions, start the server with `--mcp-force-readonly-hints`. That flag changes only the MCP metadata hints published at `/mcp`; it does not make the tools actually read-only.
+
+Development equivalent:
+
+```powershell
+dotnet run --project BrowserCommanderServer/BrowserCommanderServer.csproj --launch-profile http -- --mcp-force-readonly-hints
+```
 
 Security warning:
 

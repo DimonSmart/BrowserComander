@@ -5,6 +5,7 @@ Purpose
 
 Local prerequisites
 1. Start BrowserCommanderServer.exe locally.
+   Optional for ChatGPT: BrowserCommanderServer.exe --mcp-force-readonly-hints
 2. Keep the browser extension options page pointed at:
    http://localhost:5082
 3. Authorize the browser tab you want BrowserCommander to control.
@@ -54,5 +55,6 @@ ChatGPT app draft fields
 Important notes
 - BrowserCommander exposes HTTP MCP at /mcp (Streamable HTTP transport, not /mcp/sse).
 - The tunnel URL is only for ChatGPT. The extension itself should still use http://localhost:5082.
+- --mcp-force-readonly-hints changes only MCP safety hints published to clients. It does not make browser actions side-effect free.
 - --allow-anonymous makes the forwarded MCP endpoint publicly reachable. Use it only for testing.
 - Stop the dev tunnel when the test session is finished.
