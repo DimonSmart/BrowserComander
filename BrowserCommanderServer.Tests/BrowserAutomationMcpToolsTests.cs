@@ -283,16 +283,19 @@ public sealed class BrowserAutomationMcpToolsTests
 
         public IReadOnlyCollection<BrowserPageSummary> GetPages() => Pages;
 
-        public void AuthorizeTab(string agentId, int tabId)
+        public Task AuthorizeTabAsync(string agentId, int tabId)
         {
+            return Task.CompletedTask;
         }
 
-        public void RevokeTab(string agentId, int tabId)
+        public Task RevokeTabAsync(string agentId, int tabId)
         {
+            return Task.CompletedTask;
         }
 
-        public void ClearAllAuthorizations()
+        public Task ClearAllAuthorizationsAsync()
         {
+            return Task.CompletedTask;
         }
 
         public IReadOnlyCollection<int> GetAuthorizedTabIds(string agentId) => [];

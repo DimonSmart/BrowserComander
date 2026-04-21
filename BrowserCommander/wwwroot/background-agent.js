@@ -10,6 +10,10 @@ const MAX_PENDING_COMMAND_RESULTS = 50;
 const COMMAND_RESULT_MIN_RETRY_WINDOW_MS = 15000;
 const COMMAND_RESULT_RETRY_BUFFER_MS = 5000;
 const PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS = 30000;
+const ACTION_DEFAULT_TITLE = 'BrowserCommander';
+const ACTION_AUTHORIZED_TITLE = 'BrowserCommander is authorized for this tab.';
+const ACTION_AUTHORIZED_BADGE_TEXT = 'ON';
+const ACTION_AUTHORIZED_BADGE_BACKGROUND_COLOR = '#2563EB';
 const debuggerSessions = new Map();
 
 const state = {
@@ -27,6 +31,7 @@ const state = {
   socket: null,
   socketBuffer: '',
   authorizedTabIds: [],
+  tabIndicatorOverrideTabIds: [],
   pendingCommandResults: [],
   flushingPendingCommandResults: false
 };
@@ -137,6 +142,7 @@ chrome.tabs.onCreated.addListener(() => {
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
+  forgetTabIndicatorOverride(tabId);
   void removeMissingAuthorizedTabs([tabId]);
   void detachDebuggerSession(tabId);
   void publishTabs();
@@ -151,10 +157,9 @@ void bootstrapAgent();
 async function bootstrapAgent() {
   state.agentId ??= await getOrCreateAgentId();
   state.commandTimeout = await getConfiguredCommandTimeout();
-  state.authorizedTabIds = await fetchAuthorizedTabIdsFromServer();
+  await storeAuthorizedTabIds(await fetchAuthorizedTabIdsFromServer());
   await ensureDebuggerSessionsForAuthorizedTabs();
   await ensureConnected();
-  await updateBadge();
 }
 
 async function ensureConnected() {
@@ -306,16 +311,26 @@ async function handleHubMessageSafe(message) {
 }
 
 async function handleHubMessage(message) {
-  if (message.type !== 1 || message.target !== 'ExecuteCommand') {
+  if (message.type !== 1) {
     return;
   }
 
-  const command = message.arguments?.[0];
-  if (!command) {
-    return;
-  }
+  switch (message.target) {
+    case 'ExecuteCommand': {
+      const command = message.arguments?.[0];
+      if (!command) {
+        return;
+      }
 
-  await executeCommandAndReportResult(command);
+      await executeCommandAndReportResult(command);
+      return;
+    }
+    case 'RefreshAuthorizations':
+      await refreshAuthorizedTabsFromServer();
+      return;
+    default:
+      return;
+  }
 }
 
 async function executeCommandAndReportResult(command) {
@@ -2195,21 +2210,81 @@ async function fetchAuthorizedTabIdsFromServer() {
   }
 }
 
-async function storeAuthorizedTabIds(tabIds) {
-  state.authorizedTabIds = normalizeTabIds(tabIds);
-  await updateBadge();
+async function refreshAuthorizedTabsFromServer() {
+  await storeAuthorizedTabIds(await fetchAuthorizedTabIdsFromServer());
+  await ensureDebuggerSessionsForAuthorizedTabs();
+  await publishTabs();
 }
 
-async function updateBadge() {
-  const count = state.authorizedTabIds.length;
+async function storeAuthorizedTabIds(tabIds) {
+  state.authorizedTabIds = normalizeTabIds(tabIds);
+  await syncAuthorizedTabIndicators();
+}
+
+async function syncAuthorizedTabIndicators() {
+  const authorizedTabIds = normalizeTabIds(state.authorizedTabIds);
+  const previousOverrideTabIds = normalizeTabIds(state.tabIndicatorOverrideTabIds);
+  const authorizedTabIdSet = new Set(authorizedTabIds);
+  const count = authorizedTabIds.length;
+  const globalBadgeText = count > 0 ? count.toString() : '';
+
   try {
-    await chrome.action.setBadgeText({ text: count > 0 ? count.toString() : '' });
+    await chrome.action.setBadgeText({ text: globalBadgeText });
     if (count > 0) {
-      await chrome.action.setBadgeBackgroundColor({ color: '#2563EB' });
+      await chrome.action.setBadgeBackgroundColor({ color: ACTION_AUTHORIZED_BADGE_BACKGROUND_COLOR });
     }
+
+    await Promise.allSettled(
+      previousOverrideTabIds
+        .filter(tabId => !authorizedTabIdSet.has(tabId))
+        .map(tabId => restoreDefaultTabIndicator(tabId, globalBadgeText))
+    );
+
+    await Promise.allSettled(
+      authorizedTabIds.map(tabId => showAuthorizedTabIndicator(tabId))
+    );
   } catch {
     // Badge API may not be available in all environments
   }
+
+  state.tabIndicatorOverrideTabIds = normalizeTabIds([
+    ...previousOverrideTabIds,
+    ...authorizedTabIds
+  ]);
+}
+
+async function showAuthorizedTabIndicator(tabId) {
+  await chrome.action.setBadgeText({
+    tabId,
+    text: ACTION_AUTHORIZED_BADGE_TEXT
+  });
+  await chrome.action.setBadgeBackgroundColor({
+    tabId,
+    color: ACTION_AUTHORIZED_BADGE_BACKGROUND_COLOR
+  });
+  await chrome.action.setTitle({
+    tabId,
+    title: ACTION_AUTHORIZED_TITLE
+  });
+}
+
+async function restoreDefaultTabIndicator(tabId, globalBadgeText) {
+  await chrome.action.setBadgeText({
+    tabId,
+    text: globalBadgeText
+  });
+  await chrome.action.setTitle({
+    tabId,
+    title: ACTION_DEFAULT_TITLE
+  });
+}
+
+function forgetTabIndicatorOverride(tabId) {
+  if (!Number.isInteger(tabId)) {
+    return;
+  }
+
+  state.tabIndicatorOverrideTabIds = state.tabIndicatorOverrideTabIds.filter(candidate => candidate !== tabId);
 }
 
 async function getGlobalPages() {

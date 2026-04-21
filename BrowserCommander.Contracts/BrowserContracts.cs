@@ -70,6 +70,7 @@ public static class BrowserCommanderHubMethods
     public const string UpdateTabs = "UpdateTabs";
     public const string CompleteCommand = "CompleteCommand";
     public const string ExecuteCommand = "ExecuteCommand";
+    public const string RefreshAuthorizations = "RefreshAuthorizations";
 }
 
 public sealed class BrowserAutomationCommand

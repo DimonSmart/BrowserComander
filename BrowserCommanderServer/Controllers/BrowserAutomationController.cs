@@ -33,28 +33,28 @@ public class BrowserAutomationController : ControllerBase
     }
 
     [HttpPost("authorizations")]
-    public ActionResult AuthorizeTab([FromBody] TabAuthorizationRequest request)
+    public async Task<ActionResult> AuthorizeTab([FromBody] TabAuthorizationRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.AgentId) || request.TabId <= 0)
         {
             return BadRequest("agentId and tabId are required.");
         }
 
-        _browserAutomationService.AuthorizeTab(request.AgentId, request.TabId);
+        await _browserAutomationService.AuthorizeTabAsync(request.AgentId, request.TabId);
         return NoContent();
     }
 
     [HttpDelete("authorizations/{agentId}/{tabId:int}")]
-    public ActionResult RevokeTab(string agentId, int tabId)
+    public async Task<ActionResult> RevokeTab(string agentId, int tabId)
     {
-        _browserAutomationService.RevokeTab(agentId, tabId);
+        await _browserAutomationService.RevokeTabAsync(agentId, tabId);
         return NoContent();
     }
 
     [HttpDelete("authorizations")]
-    public ActionResult ClearAllAuthorizations()
+    public async Task<ActionResult> ClearAllAuthorizations()
     {
-        _browserAutomationService.ClearAllAuthorizations();
+        await _browserAutomationService.ClearAllAuthorizationsAsync();
         return NoContent();
     }
 

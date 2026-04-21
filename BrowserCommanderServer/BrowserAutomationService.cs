@@ -222,22 +222,32 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
             .ToArray();
     }
 
-    public void AuthorizeTab(string agentId, int tabId)
+    public async Task AuthorizeTabAsync(string agentId, int tabId)
     {
         if (!string.IsNullOrWhiteSpace(agentId) && tabId > 0)
         {
             _authorizedTabs[(agentId, tabId)] = 0;
+            await NotifyAuthorizationsChangedAsync();
         }
     }
 
-    public void RevokeTab(string agentId, int tabId)
+    public async Task RevokeTabAsync(string agentId, int tabId)
     {
-        _authorizedTabs.TryRemove((agentId, tabId), out _);
+        if (_authorizedTabs.TryRemove((agentId, tabId), out _))
+        {
+            await NotifyAuthorizationsChangedAsync();
+        }
     }
 
-    public void ClearAllAuthorizations()
+    public async Task ClearAllAuthorizationsAsync()
     {
+        if (_authorizedTabs.IsEmpty)
+        {
+            return;
+        }
+
         _authorizedTabs.Clear();
+        await NotifyAuthorizationsChangedAsync();
     }
 
     public IReadOnlyCollection<int> GetAuthorizedTabIds(string agentId)
@@ -246,6 +256,20 @@ public sealed class BrowserAutomationService : IBrowserAutomationService
             .Where(k => string.Equals(k.AgentId, agentId, StringComparison.Ordinal))
             .Select(k => k.TabId)
             .ToArray();
+    }
+
+    private async Task NotifyAuthorizationsChangedAsync()
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync(BrowserCommanderHubMethods.RefreshAuthorizations);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to broadcast authorization refresh to connected browser agents.");
+        }
     }
 
     public async Task<BrowserAutomationResult> ExecuteCommandAsync(BrowserAutomationCommand command, CancellationToken cancellationToken)

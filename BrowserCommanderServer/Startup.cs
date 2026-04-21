@@ -1,3 +1,5 @@
+using System.IO;
+
 namespace BrowserCommanderServer
 {
     public class Startup
@@ -60,8 +62,10 @@ namespace BrowserCommanderServer
             services.AddControllers();
         }
 
-        public void Configure(IApplicationBuilder app)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment environment)
         {
+            var faviconPath = Path.Combine(environment.ContentRootPath, "wwwroot", "favicon.ico");
+
             app.Use(async (context, next) =>
             {
                 context.Response.Headers[ServerIdentity.ResponseHeaderName] = ServerIdentity.ServiceName;
@@ -81,6 +85,11 @@ namespace BrowserCommanderServer
                 endpoints.MapControllers();
                 endpoints.MapHub<BrowserCommanderHub>("/browserCommanderHub");
                 endpoints.MapMcp("/mcp");
+                endpoints.MapGet(
+                    "/favicon.ico",
+                    () => File.Exists(faviconPath)
+                        ? Results.File(faviconPath, "image/x-icon")
+                        : Results.NotFound());
                 endpoints.MapGet("/health", () => Results.Ok(new { status = "ok", service = ServerIdentity.ServiceName }));
                 endpoints.MapGet("/whoami", () => Results.Ok(new { service = ServerIdentity.ServiceName }));
             });

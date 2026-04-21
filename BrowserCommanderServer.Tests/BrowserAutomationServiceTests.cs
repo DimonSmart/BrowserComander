@@ -20,14 +20,14 @@ public sealed class BrowserAutomationServiceTests
     }
 
     [Fact]
-    public void GetPages_KeepsPagesDistinct_WhenTwoBrowsersUseSameTabId()
+    public async Task GetPages_KeepsPagesDistinct_WhenTwoBrowsersUseSameTabId()
     {
         var service = CreateService();
 
         service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
         service.RegisterAgent("chrome-connection", CreateRegistration("chrome-agent", "Google Chrome", CreateTab(7, "https://chrome.example")));
-        service.AuthorizeTab("edge-agent", 7);
-        service.AuthorizeTab("chrome-agent", 7);
+        await service.AuthorizeTabAsync("edge-agent", 7);
+        await service.AuthorizeTabAsync("chrome-agent", 7);
 
         var pages = service.GetPages()
             .OrderBy(page => page.AgentId, StringComparer.Ordinal)
@@ -39,14 +39,14 @@ public sealed class BrowserAutomationServiceTests
     }
 
     [Fact]
-    public void RegisterAgent_AssignsUniqueServerSessionId_WhenReportedAgentIdCollides()
+    public async Task RegisterAgent_AssignsUniqueServerSessionId_WhenReportedAgentIdCollides()
     {
         var service = CreateService();
 
         service.RegisterAgent("edge-connection", CreateRegistration("shared-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
         service.RegisterAgent("chrome-connection", CreateRegistration("shared-agent", "Google Chrome", CreateTab(9, "https://chrome.example")));
-        service.AuthorizeTab("shared-agent", 7);
-        service.AuthorizeTab("shared-agent~chrome-connection", 9);
+        await service.AuthorizeTabAsync("shared-agent", 7);
+        await service.AuthorizeTabAsync("shared-agent~chrome-connection", 9);
 
         var pages = service.GetPages()
             .OrderBy(page => page.BrowserName, StringComparer.Ordinal)
@@ -64,14 +64,14 @@ public sealed class BrowserAutomationServiceTests
     }
 
     [Fact]
-    public void UpdateTabs_UsesConnectionBinding_WhenReportedAgentIdCollides()
+    public async Task UpdateTabs_UsesConnectionBinding_WhenReportedAgentIdCollides()
     {
         var service = CreateService();
 
         service.RegisterAgent("edge-connection", CreateRegistration("shared-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
         service.RegisterAgent("chrome-connection", CreateRegistration("shared-agent", "Google Chrome", CreateTab(9, "https://chrome.example")));
-        service.AuthorizeTab("shared-agent", 7);
-        service.AuthorizeTab("shared-agent~chrome-connection", 15);
+        await service.AuthorizeTabAsync("shared-agent", 7);
+        await service.AuthorizeTabAsync("shared-agent~chrome-connection", 15);
 
         service.UpdateTabs("chrome-connection", new BrowserAgentTabsUpdate
         {
@@ -127,7 +127,7 @@ public sealed class BrowserAutomationServiceTests
         var proxy = new TestClientProxy();
         var service = CreateService(proxy: proxy);
         service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.AuthorizeTab("edge-agent", 7);
+        await service.AuthorizeTabAsync("edge-agent", 7);
 
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
@@ -151,7 +151,7 @@ public sealed class BrowserAutomationServiceTests
         var proxy = new TestClientProxy();
         var service = CreateService(proxy: proxy);
         service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.AuthorizeTab("edge-agent", 7);
+        await service.AuthorizeTabAsync("edge-agent", 7);
 
         var executionTask = service.ExecuteCommandAsync(
             new BrowserAutomationCommand
@@ -178,7 +178,7 @@ public sealed class BrowserAutomationServiceTests
         var logger = new TestLogger<BrowserAutomationService>();
         var service = CreateService(proxy, logger);
         service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.AuthorizeTab("edge-agent", 7);
+        await service.AuthorizeTabAsync("edge-agent", 7);
 
         using var cancellation = new CancellationTokenSource();
         var executionTask = service.ExecuteCommandAsync(
@@ -211,6 +211,20 @@ public sealed class BrowserAutomationServiceTests
             entry => entry.LogLevel == LogLevel.Warning
                      && entry.Message.Contains("late result", StringComparison.OrdinalIgnoreCase)
                      && entry.Message.Contains(BrowserCommandErrorCodes.RequestAborted, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ClearAllAuthorizations_BroadcastsRefreshAuthorizations()
+    {
+        var proxy = new TestClientProxy();
+        var service = CreateService(proxy: proxy);
+
+        await service.AuthorizeTabAsync("edge-agent", 7);
+        await service.ClearAllAuthorizationsAsync();
+
+        Assert.Contains(
+            BrowserCommanderHubMethods.RefreshAuthorizations,
+            proxy.SentMethods);
     }
 
     private static BrowserAutomationService CreateService(
@@ -288,9 +302,14 @@ public sealed class BrowserAutomationServiceTests
     {
         private readonly TaskCompletionSource<BrowserAutomationCommand> _commandSent =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<string> _sentMethods = [];
+
+        public IReadOnlyList<string> SentMethods => _sentMethods;
 
         public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
         {
+            _sentMethods.Add(method);
+
             if (string.Equals(method, BrowserCommanderHubMethods.ExecuteCommand, StringComparison.Ordinal)
                 && args.FirstOrDefault() is BrowserAutomationCommand command)
             {
