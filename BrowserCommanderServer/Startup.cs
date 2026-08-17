@@ -47,13 +47,7 @@ namespace BrowserCommanderServer
             var toolCatalog = new BrowserCommanderHttpToolCatalog(toolPresentationOptions);
 
             services.AddMcpServer()
-                .WithHttpTransport(options =>
-                {
-                    // BrowserCommander exposes only server-owned tools and does not rely on
-                    // MCP session state. Stateless HTTP mode avoids stale MCP-Session-Id
-                    // failures when remote clients talk to the server through proxies/tunnels.
-                    options.Stateless = true;
-                })
+                .WithHttpTransport()
                 .WithTools(toolCatalog.Tools);
 
             services.AddSingleton<IBrowserAutomationService, BrowserAutomationService>();

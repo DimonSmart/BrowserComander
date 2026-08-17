@@ -10,7 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\BrowserCommanderServer\BrowserCommanderServer.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
-    <PackageReference Include="ModelContextProtocol" Version="1.1.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.0.0" />
   </ItemGroup>
 
 </Project>
