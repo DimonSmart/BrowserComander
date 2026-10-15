@@ -137,7 +137,7 @@ This means most future behavior changes should happen in the server-side plan bu
 ## Current constraints
 
 - The main deployment model is local-first.
-- There is no auth yet between extension and server.
+- The localhost server and local MCP clients are trusted development tools; there is intentionally no pairing, agent token or account authentication.
 - Only tabs explicitly authorized by the user may be automated.
 - The popup is designed around authorizing the current tab, not multi-select.
 - MCP tool calls use `pageId`, and the server now compiles them into structured execution plans before sending them to the browser agent.
@@ -180,11 +180,46 @@ BrowserCommander/bin/Debug/net8.0/browserextension
 
 ### 4. Authorize the current tab
 
-Open the extension popup and click `Authorize Current Tab`.
+Open the extension popup and click `Authorize Tab`.
 
-Only authorized tabs are published to the server and available to MCP tools.
+Only authorized tabs are published to the server and available to MCP tools **after the latest state revision is acknowledged**. Browser grants are stored in `chrome.storage.session`, survive MV3 worker restarts, and are automatically re-synchronized after a server reconnect. Browser or extension reload/upgrade clears this storage and requires granting access again. Chrome, Edge and separate profiles have independent session IDs, permissions and limits of 64 simultaneous authorized tabs.
 
 Use the extension `Options` page to configure the local server address and the default command timeout used when MCP tools omit `timeoutMs`.
+
+## Authorization and connection diagnostics
+
+- **Authorize Tab** grants a local permission before any debugger attach or network connection. If the server is offline, the permission stays in `chrome.storage.session` and the popup shows **Sync pending**.
+- **Revoke Tab** and **Clear Tabs in This Browser** affect only the current profile; they never silently revoke permissions belonging to another connected browser.
+- The popup separates local permissions (including offline tabs) from pages currently available through MCP. `browser_list_pages` returns the latter.
+- `browser_connection_status` provides the current `serverInstanceId`, registered sessions, acknowledged revisions, connected browser names and authorized tab counts. It cannot enumerate disconnected browsers which have never reconnected.
+- The extension's Options page displays session agent ID, server instance ID, connection and synchronization status, revisions, last synchronization time, last error and the `N/64` local quota.
+- Revocation is enforced locally before the next execution-plan step. A write failure is reported and retried while the worker remains active; persistent storage failures can prevent durable revocation after a new worker starts.
+- The new SignalR protocol version is `3`; older extensions must be updated. Old server-side HTTP authorization POST/DELETE methods are removed. Grants stored only in the old server cache or `storage.local` are **not** migrated.
+
+### Shared local server lifecycle
+
+Direct HTTP MCP and multiple stdio bridges connect to the **same** BrowserCommanderServer on port 5082 by default. If necessary, a stdio bridge launches the server in a detached background process, without owning its lifetime. Closing one MCP client does not stop the server used by others.
+
+The bridge probes `/whoami` with the `X-BrowserCommander-Service` marker and sends a real MCP `initialize` request. It must not accept an unrelated HTTP service merely because it responds on the configured port. To verify the server manually:
+
+```sh
+curl -i http://localhost:5082/whoami
+curl -i http://localhost:5082/health
+```
+
+On **Windows**, find the listening process with `Get-NetTCPConnection -LocalPort 5082 -State Listen | Select-Object OwningProcess`, then stop it with `Stop-Process -Id <PID>`. On **macOS/Linux**, use `lsof -nP -iTCP:5082 -sTCP:LISTEN` and `kill <PID>`. These explicit OS commands are the supported way to stop the detached server. If port 5082 belongs to another program, either stop that program or configure a matching alternative localhost port for the extension and MCP bridge.
+
+Detached startup logs are saved under the system temporary directory as `browsercommander-server-*.log` (with a separate `.err` file on Windows). A server restart temporarily removes pages from `browser_list_pages` but does not revoke local browser permissions.
+
+### Verification
+
+```sh
+dotnet build BrowserComander.sln
+dotnet test BrowserCommanderServer.Tests/BrowserCommanderServer.Tests.csproj
+node --test scripts/background-agent.test.cjs
+```
+
+For Playwright integration tests, install the required Chromium browser, build the extension in Debug configuration, then use `BROWSER_COMMANDER_RUN_E2E=1` (and optionally `BROWSER_COMMANDER_E2E_HEADLESS=1`). They are not executed by the standard unit-test workflow unless explicitly enabled.
 
 ## MCP transports
 
