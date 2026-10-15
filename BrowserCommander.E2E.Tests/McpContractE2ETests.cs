@@ -18,9 +18,10 @@ public sealed class McpContractE2ETests : BrowserCommanderE2ETestBase
             var tools = await session.Mcp.ListToolsAsync();
             var toolNames = tools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray();
 
-            Assert.Equal(30, toolNames.Length);
+            Assert.Equal(31, toolNames.Length);
             Assert.Equal(
                 [
+                    "browser_connection_status",
                     "browser_list_pages",
                     "browser_list_viewport_presets",
                     "locator_click",
