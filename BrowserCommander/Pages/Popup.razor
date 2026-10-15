@@ -7,7 +7,9 @@
     <h1 class="popup-header">BrowserCommander</h1>
     <p>Server Address: @serverAddress</p>
     <p>Agent Id: @agentId</p>
-    <p>Background: @(backgroundConnected ? "connected" : "disconnected")</p>
+    <p>Server connection: @connectionStatus</p>
+    <p>Registration / sync: @syncStatus (local rev @localRevision, ACK @ackRevision)</p>
+    <p>Authorized tabs in this browser: @authorizedTabs.Count / 64</p>
 
     @if (!string.IsNullOrEmpty(connectionError))
     {
@@ -21,24 +23,33 @@
     <div class="popup-form">
         <label>Current Tab:</label>
         <textarea readonly class="styled-input" style="height: 70px;">@currentTabSummary</textarea>
-        <p>Access: @(activeTabAuthorized ? "authorized" : "not authorized")</p>
+        <p>Local access: @(activeTabAuthorized ? "Authorized locally" : "Not authorized")</p>
+        <p>MCP access: @(activeTabAuthorized && syncStatus == "Synced" && backgroundConnected ? "Available" : "Sync pending / unavailable")</p>
 
         <button type="button" @onclick="AuthorizeCurrentTabAsync" class="styled-button">Authorize Tab</button>
         <button type="button" @onclick="RevokeCurrentTabAsync" class="styled-button">Revoke Tab</button>
-        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear All Tabs</button>
+        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear Tabs in This Browser</button>
     </div>
 
     <hr style="width: 100%; margin: 20px 0;" />
 
     <div class="popup-form">
-        <label>All Authorized Tabs (@globalTabCount total across all browsers):</label>
+        <label>Authorized tabs in this browser (local, including offline):</label>
+        @foreach (var tab in authorizedTabs)
+        {
+            <div style="border-left: 3px solid #2563EB; padding: 4px 8px; margin: 6px 0; font-size: 0.82em; word-break: break-all;">
+                [tab @tab.TabId] @tab.Title
+            </div>
+        }
+        <hr />
+        <label>Pages available through MCP (@globalTabCount connected):</label>
         @if (!string.IsNullOrEmpty(globalPagesError))
         {
             <p class="error-message" style="font-size: 0.85em;">@globalPagesError</p>
         }
         @if (globalPages.Count == 0 && string.IsNullOrEmpty(globalPagesError))
         {
-            <p style="font-size: 0.85em; color: #888;">No tabs are authorized on any browser.</p>
+            <p style="font-size: 0.85em; color: #888;">No pages are currently available through MCP.</p>
         }
         @foreach (var tab in globalPages)
         {
@@ -73,6 +84,10 @@
     private string serverAddress { get; set; } = "Loading...";
     private string agentId { get; set; } = string.Empty;
     private bool backgroundConnected { get; set; }
+    private string connectionStatus { get; set; } = "Disconnected";
+    private string syncStatus { get; set; } = "Pending";
+    private long localRevision { get; set; }
+    private long ackRevision { get; set; } = -1;
     private int? activeTabId;
     private string currentTabSummary { get; set; } = "No active tab.";
     private bool activeTabAuthorized { get; set; }
@@ -200,6 +215,10 @@
 
         backgroundConnected = status.Ok && status.Connected;
         agentId = status.AgentId;
+        connectionStatus = status.ConnectionStatus;
+        syncStatus = status.SyncStatus;
+        localRevision = status.StateRevision;
+        ackRevision = status.LastAcknowledgedRevision;
         authorizedTabs = status.AllowedTabs ?? [];
 
         UpdateActiveTabAuthorizationState();
