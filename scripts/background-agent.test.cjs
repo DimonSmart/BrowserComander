@@ -140,8 +140,8 @@ function createHarness({ count = 3, online = false, sessionStorage = {} } = {}) 
     saved, tabs, invocations, sockets, listeners,
     setOnline(value) { connected = value; },
     failStorage(value) { failStorageSet = value; },
-    async message(type, tabId) {
-      return new Promise(resolve => listeners.message({ type, tabId }, {}, resolve));
+    async message(type, tabId, additional = {}) {
+      return new Promise(resolve => listeners.message({ type, tabId, ...additional }, {}, resolve));
     },
     async status() { return this.message('status'); }
   };
@@ -199,4 +199,22 @@ test('closing a tab removes only its grant and tab ID reuse cannot restore it', 
   await waitFor(async () => h.saved[sessionKey].authorizedTabs.length === 0);
   h.tabs.push({ id: 1, windowId: 2, active: false, title: 'Replacement', url: 'https://new.test' });
   assert.equal((await h.status()).allowedTabs.length, 0);
+});
+
+test('late close and message from an obsolete socket cannot reset a new connection', async () => {
+  const h = createHarness({ online: true, count: 1 });
+  await waitFor(async () => (await h.status()).syncStatus === 'Synced');
+  const first = h.sockets[0];
+  const switched = await h.message('saveExtensionSettings', null, {
+    serverAddress: 'http://localhost:5091', commandTimeoutMs: 30000
+  });
+  assert.equal(switched.ok, true);
+  await waitFor(async () => h.sockets.length >= 2
+    && (await h.status()).syncStatus === 'Synced');
+  first.fire('close', { code: 1006 });
+  for (const listener of first.listeners.message ?? [])
+    listener({ data: JSON.stringify({ type: 7 }) + rs });
+  const status = await h.status();
+  assert.equal(status.connected, true);
+  assert.equal(status.syncStatus, 'Synced');
 });
