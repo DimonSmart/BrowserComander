@@ -434,7 +434,10 @@ async function executeCommand(command) {
   }
 
   try {
-    await getTabOrThrow(command.tabId);
+    const tab = await getTabOrThrow(command.tabId);
+    const grant = state.authorizedTabRecords.find(record => record.tabId === command.tabId);
+    if (!grant || grant.windowId !== tab.windowId)
+      throw createError('tab_not_authorized', 'Tab identity changed since authorization.');
 
     if (normalizedAction === 'executePlan') {
       return await executePlanCommand(command, baseResult);
@@ -835,6 +838,20 @@ async function executePlanCommand(command, baseResult) {
   };
 
   for (const step of steps) {
+    if (!isTabAuthorized(command.tabId)) {
+      return mergeAutomationResults(aggregateResult, {
+        ...baseResult, success: false, errorCode: 'tab_not_authorized',
+        error: 'The tab was revoked before the next execution-plan step.'
+      });
+    }
+    const current = await chrome.tabs.get(command.tabId).catch(() => null);
+    const grant = state.authorizedTabRecords.find(record => record.tabId === command.tabId);
+    if (!current || !grant || grant.windowId !== current.windowId) {
+      return mergeAutomationResults(aggregateResult, {
+        ...baseResult, success: false, errorCode: 'tab_not_authorized',
+        error: 'The tab was closed or replaced during execution.'
+      });
+    }
     const stepResult = await executePlanStep(command, step);
     aggregateResult = mergeAutomationResults(aggregateResult, stepResult);
 
