@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 
 namespace BrowserCommander.McpStdioBridge;
 
@@ -19,7 +20,6 @@ public sealed class ServerProcessManager : IAsyncDisposable
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(5);
     private const int MaxCapturedOutputLines = 40;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -54,6 +54,10 @@ public sealed class ServerProcessManager : IAsyncDisposable
             return EndpointAvailability.Available();
         }
 
+        if (await ProbeIdentityAsync(cancellationToken) == false)
+            return EndpointAvailability.Unavailable(
+                $"wrong_server_endpoint: port for '{_options.UpstreamEndpoint}' is occupied by another HTTP service.");
+
         if (!CanAutoStart)
         {
             return EndpointAvailability.Unavailable(
@@ -87,45 +91,68 @@ public sealed class ServerProcessManager : IAsyncDisposable
         }
     }
 
-    public async Task<bool> IsEndpointReachableAsync(CancellationToken cancellationToken)
+    private Uri IdentityEndpoint => new(_options.UpstreamServerBaseAddress.TrimEnd('/') + "/whoami");
+
+    // true = our service, false = a different HTTP service, null = nothing listening.
+    private async Task<bool?> ProbeIdentityAsync(CancellationToken cancellationToken)
     {
-        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource.CancelAfter(ProbeTimeout);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, _options.UpstreamEndpoint)
-        {
-            Content = new StringContent("{}", Encoding.UTF8, "application/json")
-        };
-
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ProbeTimeout);
         try
         {
-            using var _ = await _probeClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                timeoutSource.Token);
-
-            return true;
+            using var response = await _probeClient.GetAsync(IdentityEndpoint, timeout.Token);
+            if (!response.IsSuccessStatusCode) return false;
+            if (!response.Headers.TryGetValues("X-BrowserCommander-Service", out var headers)
+                || !headers.Contains("BrowserCommanderServer", StringComparer.Ordinal))
+                return false;
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            return body.RootElement.TryGetProperty("service", out var service)
+                && service.GetString() == "BrowserCommanderServer";
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return false;
-        }
-        catch (HttpRequestException)
-        {
-            return false;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
+        catch (HttpRequestException) { return null; }
+        catch (IOException) { return null; }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return null; }
+        catch (JsonException) { return false; }
     }
 
+    public async Task<bool> IsEndpointReachableAsync(CancellationToken cancellationToken)
+    {
+        if (await ProbeIdentityAsync(cancellationToken) != true) return false;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ProbeTimeout);
+        const string initialize = """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"browsercommander-bridge-probe","version":"1.0"}}}
+            """;
+        using var request = new HttpRequestMessage(HttpMethod.Post, _options.UpstreamEndpoint)
+        {
+            Content = new StringContent(initialize, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        try
+        {
+            using var response = await _probeClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            if (!response.IsSuccessStatusCode
+                || !response.Headers.TryGetValues("X-BrowserCommander-Service", out var headers)
+                || !headers.Contains("BrowserCommanderServer", StringComparer.Ordinal))
+                return false;
+            var mediaType = response.Content.Headers.ContentType?.MediaType;
+            return mediaType == "application/json" || mediaType == "text/event-stream";
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { return false; }
+        catch (HttpRequestException) { return false; }
+        catch (IOException) { return false; }
+    }
+
+    // A stdio bridge never owns the shared server lifetime.
     public async ValueTask DisposeAsync()
     {
         await _gate.WaitAsync();
         try
         {
-            await StopOwnedProcessAsync();
+            _ownedProcess?.Dispose();
+            _ownedProcess = null;
         }
         finally
         {
@@ -258,6 +285,10 @@ public sealed class ServerProcessManager : IAsyncDisposable
                 var failureMessage = CreateStartupFailureMessage(
                     $"BrowserCommanderServer exited with code {exitedProcess.ExitCode}.");
                 CleanupExitedOwnedProcess();
+                // Another concurrently starting bridge may be about to win the port.
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                if (await IsEndpointReachableAsync(cancellationToken))
+                    return EndpointAvailability.Available();
                 return EndpointAvailability.Unavailable(failureMessage);
             }
 
@@ -320,33 +351,4 @@ public sealed class ServerProcessManager : IAsyncDisposable
         _ownedProcess = null;
     }
 
-    private async Task StopOwnedProcessAsync()
-    {
-        if (_ownedProcess is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (!_ownedProcess.HasExited)
-            {
-                _ownedProcess.Kill(entireProcessTree: true);
-                using var timeoutSource = new CancellationTokenSource(ShutdownTimeout);
-                await _ownedProcess.WaitForExitAsync(
-                    timeoutSource.Token);
-            }
-        }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            _ownedProcess.Dispose();
-            _ownedProcess = null;
-        }
-    }
 }
