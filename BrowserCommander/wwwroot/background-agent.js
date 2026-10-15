@@ -4,6 +4,7 @@ const SERVER_ADDRESS_KEY = 'browserCommander.serverAddress';
 const COMMAND_TIMEOUT_KEY = 'browserCommander.commandTimeoutMs';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const DEBUGGER_BUFFER_LIMIT = 200;
+const PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS = 30000;
 const BROWSER_COMMANDER_PROTOCOL_VERSION = '3';
 const MAX_AUTHORIZED_TABS = 64;
 const ACTION_DEFAULT_TITLE = 'BrowserCommander';
@@ -2050,102 +2051,42 @@ function readLocatorPointSnapshot(selector) {
   };
 }
 
-async function sendInvocation(target, args) {
-  if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
-    throw new Error('SignalR socket is not open.');
-  }
-
-  const payload = {
-    type: 1,
-    target,
-    arguments: args
-  };
-
-  state.socket.send(JSON.stringify(payload) + RECORD_SEPARATOR);
-}
-
-async function sendCommandCompletion(result, command) {
-  try {
-    await sendInvocation('CompleteCommand', [result]);
-  } catch (error) {
-    queuePendingCommandResult(result, command);
-    throw error;
-  }
-}
-
-function queuePendingCommandResult(result, command) {
-  const commandTimeout = getCommandTimeout(command);
-  const expiresAt = Date.now() + Math.max(
-    COMMAND_RESULT_MIN_RETRY_WINDOW_MS,
-    commandTimeout + COMMAND_RESULT_RETRY_BUFFER_MS);
-
-  const entries = state.pendingCommandResults
-    .filter(entry => entry.commandId !== result?.commandId)
-    .filter(entry => entry.expiresAt > Date.now());
-
-  entries.push({
-    result,
-    commandId: result?.commandId ?? null,
-    action: result?.action ?? command?.action ?? null,
-    tabId: result?.tabId ?? command?.tabId ?? null,
-    expiresAt,
-    attempts: 1
-  });
-
-  if (entries.length > MAX_PENDING_COMMAND_RESULTS) {
-    const droppedEntries = entries.splice(0, entries.length - MAX_PENDING_COMMAND_RESULTS);
-    for (const droppedEntry of droppedEntries) {
-      console.warn(`Dropped queued completion result because the retry queue is full (${formatCommandLogContext(droppedEntry)}).`);
+async function sendInvocation(target, args, connection = state.currentConnection) {
+  if (!connection || state.currentConnection !== connection || connection.socket.readyState !== WebSocket.OPEN)
+    throw createError('agent_disconnected', 'SignalR socket is not open.');
+  const invocationId = String(++connection.invocationId);
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      connection.pending.delete(invocationId);
+      reject(createError('sync_failed', `SignalR ${target} timed out.`));
+    }, 12000);
+    connection.pending.set(invocationId, { resolve, reject, timeout });
+    try {
+      connection.socket.send(JSON.stringify({
+        type: 1, invocationId, target, arguments: args
+      }) + RECORD_SEPARATOR);
+    } catch (error) {
+      connection.pending.delete(invocationId);
+      clearTimeout(timeout);
+      reject(error);
     }
-  }
+  });
+}
 
-  state.pendingCommandResults = entries;
+async function sendCommandCompletion(result, command, connection = state.currentConnection) {
+  // Results from a displaced transport cannot complete commands of the new generation.
+  if (connection !== state.currentConnection) return;
+  await sendInvocation('CompleteCommand', [result], connection);
 }
 
 async function flushPendingCommandResults() {
-  if (state.flushingPendingCommandResults
-    || state.pendingCommandResults.length === 0
-    || !state.socket
-    || state.socket.readyState !== WebSocket.OPEN) {
-    return;
-  }
-
-  state.flushingPendingCommandResults = true;
-
-  try {
-    const queuedEntries = state.pendingCommandResults;
-    state.pendingCommandResults = [];
-
-    for (let index = 0; index < queuedEntries.length; index += 1) {
-      const entry = queuedEntries[index];
-      if (entry.expiresAt <= Date.now()) {
-        console.warn(`Dropped expired queued completion result (${formatCommandLogContext(entry)}).`);
-        continue;
-      }
-
-      try {
-        await sendInvocation('CompleteCommand', [entry.result]);
-      } catch (error) {
-        entry.attempts += 1;
-        state.pendingCommandResults = [
-          entry,
-          ...queuedEntries.slice(index + 1).filter(candidate => candidate.expiresAt > Date.now())
-        ];
-
-        console.warn(
-          `Failed to flush queued completion result (${formatCommandLogContext(entry)}).`,
-          error);
-        return;
-      }
-    }
-  } finally {
-    state.flushingPendingCommandResults = false;
-  }
+  // Do not replay results originating from obsolete connections.
 }
-
 async function getAuthorizedTabsSnapshot() {
   const tabs = await getTabsByIds(state.authorizedTabIds);
-  return tabs.map(mapTabDescriptor);
+  const windowById = new Map(state.authorizedTabRecords.map(record => [record.tabId, record.windowId]));
+  return tabs.filter(tab => windowById.get(tab.id) === tab.windowId
+    && !state.blockedTabIds.has(tab.id)).map(mapTabDescriptor);
 }
 
 async function getAuthorizedTabsSnapshotSafe() {
@@ -2231,52 +2172,7 @@ async function detectBrowserName() {
   return 'Chromium';
 }
 
-async function getOrCreateAgentId() {
-  const stored = await chrome.storage.local.get(AGENT_ID_KEY);
-  const existingAgentId = stored?.[AGENT_ID_KEY];
-  if (existingAgentId) {
-    return existingAgentId;
-  }
-
-  const agentId = globalThis.crypto?.randomUUID?.() ?? `agent-${Date.now()}`;
-  await chrome.storage.local.set({ [AGENT_ID_KEY]: agentId });
-  return agentId;
-}
-
-async function getStoredAuthorizedTabIds() {
-  const stored = await chrome.storage.local.get(ALLOWED_TAB_IDS_KEY);
-  return normalizeTabIds(stored?.[ALLOWED_TAB_IDS_KEY]);
-}
-
-async function fetchAuthorizedTabIdsFromServer() {
-  try {
-    const serverAddress = await getServerAddress();
-    const agentId = state.agentId;
-    if (!serverAddress || !agentId) {
-      return [];
-    }
-    const response = await fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(agentId)}`);
-    if (!response.ok) {
-      return [];
-    }
-    const tabIds = await response.json();
-    return normalizeTabIds(tabIds);
-  } catch (error) {
-    console.warn('Failed to fetch authorized tab IDs from the server.', error);
-    return [];
-  }
-}
-
-async function refreshAuthorizedTabsFromServer() {
-  await storeAuthorizedTabIds(await fetchAuthorizedTabIdsFromServer());
-  await ensureDebuggerSessionsForAuthorizedTabs();
-  await publishTabs();
-}
-
-async function storeAuthorizedTabIds(tabIds) {
-  state.authorizedTabIds = normalizeTabIds(tabIds);
-  await syncAuthorizedTabIndicators();
-}
+// Authorization is owned exclusively by chrome.storage.session.
 
 async function syncAuthorizedTabIndicators() {
   const authorizedTabIds = normalizeTabIds(state.authorizedTabIds);
@@ -2360,104 +2256,114 @@ async function getGlobalPages() {
 
 async function authorizeTab(tabId) {
   ensureValidTabId(tabId);
-  await tryEnsureDebuggerSession(tabId);
-  try {
-    const serverAddress = await getServerAddress();
-    await fetch(`${serverAddress}/api/browser-automation/authorizations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId: state.agentId, tabId })
-    });
-  } catch {
-    // best-effort: server may be unreachable
-  }
-  const nextTabIds = new Set(state.authorizedTabIds);
-  nextTabIds.add(tabId);
-  await storeAuthorizedTabIds([...nextTabIds]);
-  await publishTabs();
+  await enqueueMutation(async records => {
+    const current = await chrome.tabs.get(tabId).catch(() => null);
+    if (!current) throw createError('tab_closed', 'The tab no longer exists.');
+    const tabs = await getTabsByIds(records.map(record => record.tabId));
+    const byId = new Map(tabs.map(tab => [tab.id, tab]));
+    const valid = records.filter(record =>
+      byId.get(record.tabId)?.windowId === record.windowId);
+    if (valid.some(record => record.tabId === tabId)) {
+      state.blockedTabIds.delete(tabId);
+      return valid.length === records.length ? null : valid;
+    }
+    if (valid.length >= MAX_AUTHORIZED_TABS)
+      throw createError('authorization_limit_reached', 'Cannot authorize more than 64 tabs in this browser.');
+    valid.push({ tabId, windowId: current.windowId });
+    return valid;
+  });
+  state.blockedTabIds.delete(tabId);
+  void tryEnsureDebuggerSession(tabId);
+  void publishTabs();
 }
 
 async function revokeTab(tabId) {
   ensureValidTabId(tabId);
+  state.blockedTabIds.add(tabId);
   try {
-    const serverAddress = await getServerAddress();
-    await fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, {
-      method: 'DELETE'
+    await enqueueMutation(records => {
+      const valid = records.filter(record => record.tabId !== tabId);
+      return valid.length === records.length ? null : valid;
     });
-  } catch {
-    // best-effort
+    state.blockedTabIds.delete(tabId);
+  } catch (error) {
+    scheduleStorageRetry();
+    throw createError('storage_failed', `Revocation not yet persisted: ${error}`);
+  } finally {
+    void detachDebuggerSession(tabId);
   }
-  await storeAuthorizedTabIds(state.authorizedTabIds.filter(candidate => candidate !== tabId));
-  await detachDebuggerSession(tabId);
-  await publishTabs();
 }
 
 async function clearAuthorizedTabs() {
+  const ids = [...state.authorizedTabIds];
+  ids.forEach(id => state.blockedTabIds.add(id));
   try {
-    const serverAddress = await getServerAddress();
-    await fetch(`${serverAddress}/api/browser-automation/authorizations`, { method: 'DELETE' });
-  } catch {
-    // best-effort
+    await enqueueMutation(records => records.length ? [] : null);
+    ids.forEach(id => state.blockedTabIds.delete(id));
+  } catch (error) {
+    scheduleStorageRetry();
+    throw createError('storage_failed', `Clear not yet persisted: ${error}`);
+  } finally {
+    await Promise.allSettled(ids.map(id => detachDebuggerSession(id)));
   }
-  await storeAuthorizedTabIds([]);
-  await Promise.allSettled([...debuggerSessions.keys()].map(tabId => detachDebuggerSession(tabId)));
-  await publishTabs();
 }
 
 async function pruneAuthorizedTabs() {
-  const existingTabs = await getTabsByIds(state.authorizedTabIds);
-  const existingTabIds = existingTabs.map(tab => tab.id);
-  const removedTabIds = state.authorizedTabIds.filter(tabId => !existingTabIds.includes(tabId));
-  if (!areSameIds(existingTabIds, state.authorizedTabIds)) {
-    // Revoke closed tabs from server
-    try {
-      const serverAddress = await getServerAddress();
-      await Promise.allSettled(removedTabIds.map(tabId =>
-        fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, { method: 'DELETE' })
-      ));
-    } catch {
-      // best-effort
-    }
-    await storeAuthorizedTabIds(existingTabIds);
-  }
-
-  await Promise.allSettled(removedTabIds.map(tabId => detachDebuggerSession(tabId)));
+  await enqueueMutation(async records => {
+    const tabs = await getTabsByIds(records.map(record => record.tabId));
+    const byId = new Map(tabs.map(tab => [tab.id, tab]));
+    const valid = records.filter(record =>
+      byId.get(record.tabId)?.windowId === record.windowId
+      && !state.blockedTabIds.has(record.tabId));
+    return valid.length === records.length ? null : valid;
+  });
 }
 
 async function removeMissingAuthorizedTabs(missingTabIds) {
-  if (!Array.isArray(missingTabIds) || missingTabIds.length === 0) {
-    return;
-  }
-
   const missing = new Set(normalizeTabIds(missingTabIds));
-  if (missing.size === 0) {
-    return;
+  if (!missing.size) return;
+  await enqueueMutation(records => {
+    const valid = records.filter(record => !missing.has(record.tabId));
+    return valid.length === records.length ? null : valid;
+  });
+  for (const id of missing) {
+    state.blockedTabIds.delete(id);
+    void detachDebuggerSession(id);
   }
-
-  // Revoke closed tabs from server
-  try {
-    const serverAddress = await getServerAddress();
-    await Promise.allSettled([...missing].map(tabId =>
-      fetch(`${serverAddress}/api/browser-automation/authorizations/${encodeURIComponent(state.agentId)}/${tabId}`, { method: 'DELETE' })
-    ));
-  } catch {
-    // best-effort
-  }
-
-  const nextTabIds = state.authorizedTabIds.filter(tabId => !missing.has(tabId));
-  if (!areSameIds(nextTabIds, state.authorizedTabIds)) {
-    await storeAuthorizedTabIds(nextTabIds);
-  }
-
-  await Promise.allSettled([...missing].map(tabId => detachDebuggerSession(tabId)));
 }
 
-async function createStatusResponse() {
+function scheduleStorageRetry() {
+  chrome.alarms.create(STORAGE_RETRY_ALARM, { delayInMinutes: 0.5 });
+}
+async function retryFailedRevocations() {
+  if (!state.blockedTabIds.size) return;
+  try {
+    const blocked = new Set(state.blockedTabIds);
+    await enqueueMutation(records => records.filter(record => !blocked.has(record.tabId)));
+    for (const id of blocked) state.blockedTabIds.delete(id);
+  } catch (error) {
+    recordError(createError('storage_failed', String(error)));
+    scheduleStorageRetry();
+  }
+}
+
+async function createStatusResponse(fallback = false) {
   return {
-    ok: true,
-    agentId: state.agentId,
+    ok: state.initialized && !state.initializeError,
+    agentId: state.agentId ?? '',
     connected: state.connected,
-    allowedTabs: await getAuthorizedTabsSnapshot()
+    allowedTabs: fallback || !state.initialized ? [] : await getAuthorizedTabsSnapshot(),
+    localAuthorization: state.initialized ? 'Authorized locally' : 'Storage error',
+    connectionStatus: state.connectionStatus,
+    syncStatus: state.syncStatus,
+    stateRevision: state.stateRevision,
+    lastAcknowledgedRevision: state.lastAcknowledgedRevision,
+    serverInstanceId: state.serverInstanceId,
+    lastSyncAt: state.lastSyncAt,
+    authorizedTabCount: state.authorizedTabIds.length,
+    authorizationLimit: MAX_AUTHORIZED_TABS,
+    errorCode: state.lastErrorCode,
+    error: state.lastError ?? ''
   };
 }
 
@@ -2491,7 +2397,8 @@ function ensureValidTabId(tabId) {
 }
 
 function isTabAuthorized(tabId) {
-  return normalizeTabIds([tabId]).some(candidate => state.authorizedTabIds.includes(candidate));
+  return state.initialized && !state.initializeError && !state.blockedTabIds.has(tabId)
+    && state.authorizedTabIds.includes(tabId);
 }
 
 async function getServerAddress() {
@@ -2594,23 +2501,19 @@ async function saveExtensionSettings(settings) {
   }
 
   if (normalizedCommandTimeout !== previousCommandTimeout && state.connected) {
-    await registerAgent();
+    await reconnectToConfiguredServer();
   }
 }
 
 async function reconnectToConfiguredServer() {
   clearReconnectTimer();
-
-  if (state.socket) {
-    state.suppressReconnect = true;
-
-    try {
-      state.socket.close(1000, 'Server address updated.');
-    } catch {
-    }
+  ++state.connectionGeneration;
+  const connection = state.currentConnection;
+  state.connectPromise = null;
+  if (connection) {
+    closeConnection(connection);
+    connection.socket.close(1000, 'Server address changed.');
   }
-
-  cleanupSocket();
   await ensureConnected();
 }
 
@@ -2683,24 +2586,19 @@ function createWebSocketUrl(serverAddress, connectionToken) {
   return url.toString();
 }
 
-function parseHubMessages(rawData) {
-  state.socketBuffer += rawData;
+function parseHubMessages(rawData, connection) {
+  connection.buffer += rawData;
+  if (connection.buffer.length > 8 * 1024 * 1024)
+    throw createError('protocol_incompatible', 'Oversized SignalR frame.');
   const messages = [];
-
-  let separatorIndex = state.socketBuffer.indexOf(RECORD_SEPARATOR);
-  while (separatorIndex >= 0) {
-    const frame = state.socketBuffer.slice(0, separatorIndex);
-    state.socketBuffer = state.socketBuffer.slice(separatorIndex + 1);
-
-    if (frame) {
-      messages.push(JSON.parse(frame));
-    } else {
-      messages.push({});
-    }
-
-    separatorIndex = state.socketBuffer.indexOf(RECORD_SEPARATOR);
+  let index = connection.buffer.indexOf(RECORD_SEPARATOR);
+  while (index >= 0) {
+    const frame = connection.buffer.slice(0, index);
+    connection.buffer = connection.buffer.slice(index + 1);
+    if (!frame) throw createError('protocol_incompatible', 'Empty SignalR frame.');
+    messages.push(JSON.parse(frame));
+    index = connection.buffer.indexOf(RECORD_SEPARATOR);
   }
-
   return messages;
 }
 
@@ -2729,43 +2627,26 @@ function normalizeAction(action) {
   }
 }
 
-function startKeepAlive() {
+function startKeepAlive(connection) {
   stopKeepAlive();
   state.keepAliveTimer = setInterval(() => {
-    if (state.socket?.readyState === WebSocket.OPEN) {
-      state.socket.send(JSON.stringify({ type: 6 }) + RECORD_SEPARATOR);
-    }
-  }, 15000);
+    if (state.currentConnection === connection && connection.socket.readyState === WebSocket.OPEN)
+      connection.socket.send(JSON.stringify({ type: 6 }) + RECORD_SEPARATOR);
+  }, 25000);
 }
-
 function stopKeepAlive() {
-  if (state.keepAliveTimer) {
-    clearInterval(state.keepAliveTimer);
-    state.keepAliveTimer = null;
-  }
+  if (state.keepAliveTimer) clearInterval(state.keepAliveTimer);
+  state.keepAliveTimer = null;
 }
-
-function cleanupSocket() {
-  stopKeepAlive();
-  state.connected = false;
-  state.socket = null;
-  state.socketBuffer = '';
-}
-
 function scheduleReconnect() {
-  if (state.reconnectTimer) {
-    return;
-  }
-
-  state.reconnectTimer = setTimeout(async () => {
+  if (state.reconnectTimer) return;
+  const delay = Math.min(30000, 500 * Math.pow(2, Math.min(state.reconnectAttempts++, 6)))
+    + Math.floor(Math.random() * 250);
+  chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: Math.max(0.5, delay / 60000) });
+  state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
-    try {
-      await ensureConnected();
-    } catch (error) {
-      console.warn('Reconnect attempt failed.', error);
-      scheduleReconnect();
-    }
-  }, 3000);
+    void ensureConnected().catch(recordError);
+  }, delay);
 }
 
 function clearReconnectTimer() {
