@@ -252,7 +252,7 @@ public sealed class ServerProcessManager : IAsyncDisposable
         {
             static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
             var argumentLine = string.Join(" ", args.Select(arg =>
-                arg.Any(char.IsWhiteSpace) ? "\\\"" + arg.Replace("\\\"", "\\\\\\\"") + "\\\"" : arg));
+                arg.Any(char.IsWhiteSpace) ? "\"" + arg.Replace("\"", "\\\"") + "\"" : arg));
             var argumentsPart = args.Count == 0 ? string.Empty : $"-ArgumentList {PsQuote(argumentLine)} ";
             var stdOut = _launchLogPath;
             var stdErr = _launchLogPath + ".err";
