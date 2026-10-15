@@ -15,7 +15,8 @@ public sealed class BrowserCommanderHttpToolCatalogTests
         var pageUrl = GetTool(catalog, "page_url");
         var locatorFill = GetTool(catalog, "locator_fill");
 
-        Assert.Equal(30, catalog.Tools.Count);
+        Assert.Equal(31, catalog.Tools.Count);
+        Assert.True(GetTool(catalog, "browser_connection_status").ProtocolTool.Annotations?.ReadOnlyHint is true);
         Assert.True(pageUrl.ProtocolTool.Annotations?.ReadOnlyHint is true);
         Assert.True(locatorFill.ProtocolTool.Annotations?.ReadOnlyHint is false);
     }
