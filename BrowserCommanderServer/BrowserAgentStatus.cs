@@ -26,5 +26,9 @@ public sealed class BrowserAgentStatus
 
     public DateTimeOffset LastSeenAtUtc { get; set; }
 
+    public long StateRevision { get; set; }
+
+    public long ConnectionGeneration { get; set; }
+
     public List<BrowserTabDescriptor> Tabs { get; set; } = [];
 }
