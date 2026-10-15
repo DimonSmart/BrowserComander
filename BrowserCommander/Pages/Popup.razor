@@ -4,77 +4,125 @@
 @using WebExtensions.Net.Runtime
 
 <div class="popup-container">
-    <h1 class="popup-header">BrowserCommander</h1>
-    <p>Server Address: @serverAddress</p>
-    <p>Agent Id: @agentId</p>
-    <p>Server connection: @connectionStatus</p>
-    <p>Registration / sync: @syncStatus (local rev @localRevision, ACK @ackRevision)</p>
-    <p>Authorized tabs in this browser: @authorizedTabs.Count / 64</p>
+    <header class="popup-header">
+        <h1>BrowserCommander</h1>
+        <span class="popup-connection @(backgroundConnected ? "is-ok" : "is-off")">@connectionStatus</span>
+    </header>
 
-    @if (!string.IsNullOrEmpty(connectionError))
+    <div class="popup-overview">
+        <span>Sync: <strong>@syncStatus</strong></span>
+        <span>Authorized: <strong>@authorizedTabs.Count / 64</strong></span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(connectionError))
     {
-        <div class="error-message">
-            <p>@connectionError</p>
-        </div>
+        <div class="popup-error" role="alert">@connectionError</div>
     }
 
-    <hr style="width: 100%; margin: 20px 0;" />
-
-    <div class="popup-form">
-        <label>Current Tab:</label>
-        <textarea readonly class="styled-input" style="height: 70px;">@currentTabSummary</textarea>
-        <p>Local access: @(activeTabAuthorized ? "Authorized locally" : "Not authorized")</p>
-        <p>MCP access: @(activeTabAuthorized && syncStatus == "Synced" && backgroundConnected ? "Available" : "Sync pending / unavailable")</p>
-
-        <button type="button" @onclick="AuthorizeCurrentTabAsync" class="styled-button">Authorize Tab</button>
-        <button type="button" @onclick="RevokeCurrentTabAsync" class="styled-button">Revoke Tab</button>
-        <button type="button" @onclick="ClearAuthorizedTabsAsync" class="styled-button">Clear Tabs in This Browser</button>
-    </div>
-
-    <hr style="width: 100%; margin: 20px 0;" />
-
-    <div class="popup-form">
-        <label>Authorized tabs in this browser (local, including offline):</label>
-        @foreach (var tab in authorizedTabs)
+    <section class="popup-current" aria-label="Current tab">
+        <div class="popup-section-label">Current tab</div>
+        <div class="popup-tab-heading">
+            @if (activeTabId.HasValue)
+            {
+                <span class="popup-tab-id">#@activeTabId</span>
+            }
+            <span class="popup-truncate" title="@currentTabTitle">@currentTabTitle</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(currentTabUrl))
         {
-            <div style="border-left: 3px solid #2563EB; padding: 4px 8px; margin: 6px 0; font-size: 0.82em; word-break: break-all;">
-                [tab @tab.TabId] @tab.Title
-            </div>
+            <div class="popup-tab-url" title="@currentTabUrl">@currentTabUrl</div>
         }
-        <hr />
-        <label>Pages available through MCP (@globalTabCount connected):</label>
-        @if (!string.IsNullOrEmpty(globalPagesError))
-        {
-            <p class="error-message" style="font-size: 0.85em;">@globalPagesError</p>
-        }
-        @if (globalPages.Count == 0 && string.IsNullOrEmpty(globalPagesError))
-        {
-            <p style="font-size: 0.85em; color: #888;">No pages are currently available through MCP.</p>
-        }
-        @foreach (var tab in globalPages)
-        {
-            var isLocal = string.Equals(tab.AgentId, agentId, StringComparison.Ordinal);
-            var isActive = isLocal && activeTabId.HasValue && tab.TabId == activeTabId.Value;
-            var borderColor = isLocal ? "#2563EB" : "#aaa";
-            var browserLabel = tab.BrowserName ?? tab.AgentId;
-            <div style="border-left: 3px solid @borderColor; padding: 4px 8px; margin: 6px 0; font-size: 0.82em; word-break: break-all;">
-                @if (isActive)
-                {
-                    <span style="font-weight: bold; color: #2563EB;">[current tab] </span>
-                }
-                else if (isLocal)
-                {
-                    <span style="color: #2563EB;">[this browser] </span>
-                }
-                else
-                {
-                    <span style="color: #888;">[@browserLabel] </span>
-                }
-                <span>[tab @tab.TabId] @tab.Title</span><br />
-                <span style="color: #666;">@tab.Url</span>
-            </div>
-        }
-    </div>
+        <div class="popup-access-row">
+            <span class="popup-access @(activeTabAuthorized ? "is-ok" : "is-off")">
+                Local: @(activeTabAuthorized ? "Authorized" : "Not authorized")
+            </span>
+            <span class="popup-access @(activeTabAuthorized && syncStatus == "Synced" && backgroundConnected ? "is-ok" : "is-muted")">
+                MCP: @(activeTabAuthorized && syncStatus == "Synced" && backgroundConnected ? "Available" : "Unavailable")
+            </span>
+        </div>
+        <div class="popup-actions">
+            @if (activeTabAuthorized)
+            {
+                <button type="button" class="popup-button popup-button-secondary" @onclick="RevokeCurrentTabAsync" disabled="@(!activeTabId.HasValue)">Revoke access</button>
+            }
+            else
+            {
+                <button type="button" class="popup-button popup-button-primary" @onclick="AuthorizeCurrentTabAsync" disabled="@(!activeTabId.HasValue)">Authorize tab</button>
+            }
+        </div>
+    </section>
+
+    <details class="popup-disclosure">
+        <summary><span>Authorized tabs in this browser</span><span class="popup-count">@authorizedTabs.Count / 64</span></summary>
+        <div class="popup-disclosure-body">
+            @if (authorizedTabs.Count == 0)
+            {
+                <p class="popup-empty">No authorized tabs.</p>
+            }
+            else
+            {
+                <div class="popup-list">
+                    @foreach (var tab in authorizedTabs)
+                    {
+                        <div class="popup-list-item" title="@tab.Title">
+                            <span class="popup-tab-id">#@tab.TabId</span>
+                            <span class="popup-truncate">@tab.Title</span>
+                        </div>
+                    }
+                </div>
+            }
+            <button type="button" class="popup-clear-button" @onclick="ClearAuthorizedTabsAsync" disabled="@(authorizedTabs.Count == 0)">Clear tabs in this browser</button>
+        </div>
+    </details>
+
+    <details class="popup-disclosure">
+        <summary><span>Pages available through MCP</span><span class="popup-count">@globalTabCount</span></summary>
+        <div class="popup-disclosure-body">
+            @if (!string.IsNullOrWhiteSpace(globalPagesError))
+            {
+                <p class="popup-error" role="alert">@globalPagesError</p>
+            }
+            else if (globalPages.Count == 0)
+            {
+                <p class="popup-empty">No pages are currently available through MCP.</p>
+            }
+            else
+            {
+                <div class="popup-list">
+                    @foreach (var tab in globalPages)
+                    {
+                        var isLocal = string.Equals(tab.AgentId, agentId, StringComparison.Ordinal);
+                        var isActive = isLocal && activeTabId.HasValue && tab.TabId == activeTabId.Value;
+                        var browserLabel = isLocal ? "This browser" : (tab.BrowserName ?? tab.AgentId);
+                        <div class="popup-page-item">
+                            <div class="popup-page-heading">
+                                <span class="popup-tab-id">#@tab.TabId</span>
+                                <span class="popup-truncate" title="@tab.Title">@tab.Title</span>
+                                @if (isActive)
+                                {
+                                    <span class="popup-page-origin">Current</span>
+                                }
+                            </div>
+                            <div class="popup-page-meta">
+                                <span class="popup-truncate" title="@tab.Url">@tab.Url</span>
+                                <span class="popup-page-origin" title="@browserLabel">@browserLabel</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </details>
+
+    <details class="popup-disclosure">
+        <summary><span>Connection details</span><span class="popup-count">@syncStatus</span></summary>
+        <dl class="popup-details">
+            <dt>Server</dt><dd title="@serverAddress">@serverAddress</dd>
+            <dt>Agent ID</dt><dd title="@agentId">@agentId</dd>
+            <dt>Connection</dt><dd>@connectionStatus</dd>
+            <dt>Revision / ACK</dt><dd>@localRevision / @ackRevision</dd>
+        </dl>
+    </details>
 </div>
 
 @code {
@@ -89,7 +137,8 @@
     private long localRevision { get; set; }
     private long ackRevision { get; set; } = -1;
     private int? activeTabId;
-    private string currentTabSummary { get; set; } = "No active tab.";
+    private string currentTabTitle { get; set; } = "No active tab.";
+    private string currentTabUrl { get; set; } = string.Empty;
     private bool activeTabAuthorized { get; set; }
     private List<BrowserTabDescriptor> authorizedTabs { get; set; } = [];
     private List<GlobalPageInfo> globalPages { get; set; } = [];
@@ -131,12 +180,14 @@
 
         if (!activeTabId.HasValue)
         {
-            currentTabSummary = "No active tab.";
+            currentTabTitle = "No active tab.";
+            currentTabUrl = string.Empty;
             activeTabAuthorized = false;
             return;
         }
 
-        currentTabSummary = $"[{activeTabId}] {activeTab?.Title}\n{activeTab?.Url}";
+        currentTabTitle = string.IsNullOrWhiteSpace(activeTab?.Title) ? "Untitled tab" : activeTab.Title;
+        currentTabUrl = activeTab?.Url ?? string.Empty;
         UpdateActiveTabAuthorizationState();
     }
 
