@@ -26,38 +26,6 @@ public class BrowserAutomationController : ControllerBase
         return Ok(_browserAutomationService.GetPages());
     }
 
-    [HttpGet("authorizations/{agentId}")]
-    public ActionResult<IReadOnlyCollection<int>> GetAuthorizations(string agentId)
-    {
-        return Ok(_browserAutomationService.GetAuthorizedTabIds(agentId));
-    }
-
-    [HttpPost("authorizations")]
-    public async Task<ActionResult> AuthorizeTab([FromBody] TabAuthorizationRequest request)
-    {
-        if (string.IsNullOrWhiteSpace(request.AgentId) || request.TabId <= 0)
-        {
-            return BadRequest("agentId and tabId are required.");
-        }
-
-        await _browserAutomationService.AuthorizeTabAsync(request.AgentId, request.TabId);
-        return NoContent();
-    }
-
-    [HttpDelete("authorizations/{agentId}/{tabId:int}")]
-    public async Task<ActionResult> RevokeTab(string agentId, int tabId)
-    {
-        await _browserAutomationService.RevokeTabAsync(agentId, tabId);
-        return NoContent();
-    }
-
-    [HttpDelete("authorizations")]
-    public async Task<ActionResult> ClearAllAuthorizations()
-    {
-        await _browserAutomationService.ClearAllAuthorizationsAsync();
-        return NoContent();
-    }
-
     [HttpPost("commands")]
     public async Task<ActionResult<BrowserAutomationResult>> ExecuteCommand(
         [FromBody] BrowserAutomationCommand command,
