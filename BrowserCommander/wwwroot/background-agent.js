@@ -335,6 +335,7 @@ async function publishTabs() {
   state.publishRequested = true;
   if (state.publishPromise) return state.publishPromise;
   const work = (async () => {
+    let publishingConnection = null;
     try {
       await bootstrapAgent();
       await state.mutationQueue.catch(() => {});
@@ -344,6 +345,7 @@ async function publishTabs() {
           try { await ensureConnected(); } catch { return; }
         }
         const connection = state.currentConnection;
+        publishingConnection = connection;
         if (!connection || connection.socket.readyState !== WebSocket.OPEN) return;
         let snapshot = await getAuthorizedTabsSnapshot();
         let revision = state.stateRevision;
@@ -377,12 +379,13 @@ async function publishTabs() {
         await flushPendingCommandResults();
       }
     } catch (error) {
-      state.syncStatus = 'Failed';
       recordError(error);
-      if (state.currentConnection) {
-        const c = state.currentConnection;
-        c.socket.close();
-        closeConnection(c);
+      // A failed invocation belongs to its original transport, not to a reconnect
+      // that may have taken over while the old request was awaiting its Completion.
+      if (publishingConnection && state.currentConnection === publishingConnection) {
+        state.syncStatus = 'Failed';
+        publishingConnection.socket.close();
+        closeConnection(publishingConnection);
       }
     }
   })();
@@ -2339,13 +2342,18 @@ async function pruneAuthorizedTabs() {
 async function removeMissingAuthorizedTabs(missingTabIds) {
   const missing = new Set(normalizeTabIds(missingTabIds));
   if (!missing.size) return;
-  await enqueueMutation(records => {
-    const valid = records.filter(record => !missing.has(record.tabId));
-    return valid.length === records.length ? null : valid;
-  });
-  for (const id of missing) {
-    state.blockedTabIds.delete(id);
-    void detachDebuggerSession(id);
+  try {
+    await enqueueMutation(records => {
+      const valid = records.filter(record => !missing.has(record.tabId));
+      return valid.length === records.length ? null : valid;
+    });
+    for (const id of missing) {
+      state.blockedTabIds.delete(id);
+      void detachDebuggerSession(id);
+    }
+  } catch (error) {
+    scheduleStorageRetry();
+    throw error;
   }
 }
 
