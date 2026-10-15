@@ -60,6 +60,34 @@
                 <span class="detail-label">Background</span>
                 <code>@backgroundStatusText</code>
             </div>
+            <div class="detail-card">
+                <span class="detail-label">Session Agent ID</span>
+                <code>@sessionAgentId</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Server Instance ID</span>
+                <code>@serverInstanceId</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Connection / Sync</span>
+                <code>@connectionSyncStatus</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Local / ACK revision</span>
+                <code>@revisionStatus</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Last synchronization</span>
+                <code>@lastSyncAt</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Authorization quota</span>
+                <code>@authorizationCount</code>
+            </div>
+            <div class="detail-card">
+                <span class="detail-label">Last diagnostic error</span>
+                <code>@lastDiagnosticError</code>
+            </div>
         </div>
     </article>
 </section>
@@ -72,6 +100,13 @@
     private int effectiveCommandTimeoutMs { get; set; } = 30000;
     private int defaultCommandTimeoutMs { get; set; } = 30000;
     private string backgroundStatusText { get; set; } = "Loading...";
+    private string sessionAgentId { get; set; } = "Unavailable";
+    private string serverInstanceId { get; set; } = "Unavailable";
+    private string connectionSyncStatus { get; set; } = "Disconnected / Pending";
+    private string revisionStatus { get; set; } = "-";
+    private string lastSyncAt { get; set; } = "Never";
+    private string authorizationCount { get; set; } = "0 / 64";
+    private string lastDiagnosticError { get; set; } = "-";
     private string statusMessage { get; set; } = string.Empty;
     private bool saveFailed { get; set; }
     private bool isSaving { get; set; }
@@ -174,6 +209,17 @@
 
     private void ApplyBackgroundStatus(BackgroundAgentStatus? status)
     {
+        if (status is not null)
+        {
+            sessionAgentId = status.AgentId;
+            serverInstanceId = status.ServerInstanceId ?? "Not yet connected";
+            connectionSyncStatus = $"{status.ConnectionStatus} / {status.SyncStatus}";
+            revisionStatus = $"{status.StateRevision} / {status.LastAcknowledgedRevision}";
+            lastSyncAt = status.LastSyncAt ?? "Never";
+            authorizationCount = $"{status.AuthorizedTabCount} / {status.AuthorizationLimit}";
+            lastDiagnosticError = string.IsNullOrEmpty(status.ErrorCode)
+                ? "-" : $"{status.ErrorCode}: {status.Error}";
+        }
         backgroundStatusText = status switch
         {
             null => "Unavailable",
