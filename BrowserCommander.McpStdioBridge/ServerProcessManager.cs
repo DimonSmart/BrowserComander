@@ -18,7 +18,7 @@ public readonly record struct EndpointAvailability(
 public sealed class ServerProcessManager : IAsyncDisposable
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromMilliseconds(250);
     private const int MaxCapturedOutputLines = 40;
 
@@ -28,6 +28,7 @@ public sealed class ServerProcessManager : IAsyncDisposable
     private readonly StdioBridgeOptions _options;
 
     private Process? _ownedProcess;
+    private string? _launchLogPath;
 
     public ServerProcessManager(StdioBridgeOptions options)
     {
@@ -224,46 +225,63 @@ public sealed class ServerProcessManager : IAsyncDisposable
 
     private ProcessStartInfo CreateProjectStartInfo()
     {
-        var workingDirectory = _options.RepositoryRootPath
+        var directory = _options.RepositoryRootPath
             ?? Path.GetDirectoryName(_options.LocalServerProjectPath!)
             ?? Environment.CurrentDirectory;
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "dotnet",
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        startInfo.ArgumentList.Add("run");
-        startInfo.ArgumentList.Add("--project");
-        startInfo.ArgumentList.Add(_options.LocalServerProjectPath!);
-        startInfo.ArgumentList.Add("--no-launch-profile");
-        startInfo.Environment["ASPNETCORE_URLS"] = _options.UpstreamServerBaseAddress;
-
-        return startInfo;
+        return CreateDetachedServerStartInfo("dotnet",
+            ["run", "--project", _options.LocalServerProjectPath!, "--no-launch-profile"],
+            directory);
     }
 
-    private ProcessStartInfo CreatePublishedServerStartInfo(string publishedServerExecutablePath)
+    private ProcessStartInfo CreatePublishedServerStartInfo(string executablePath)
     {
-        var workingDirectory = Path.GetDirectoryName(publishedServerExecutablePath)
-            ?? Environment.CurrentDirectory;
+        return CreateDetachedServerStartInfo(executablePath, [],
+            Path.GetDirectoryName(executablePath) ?? Environment.CurrentDirectory);
+    }
 
-        var startInfo = new ProcessStartInfo
+    // The launcher exits immediately; its child uses detached stdio and its own logfile.
+    // Otherwise closing a bridge closes the server's inherited stdout/stderr pipes.
+    private ProcessStartInfo CreateDetachedServerStartInfo(
+        string executable, IReadOnlyList<string> args, string directory)
+    {
+        _launchLogPath = Path.Combine(Path.GetTempPath(),
+            $"browsercommander-server-{Environment.ProcessId}-{Guid.NewGuid():N}.log");
+
+        ProcessStartInfo startInfo;
+        if (OperatingSystem.IsWindows())
         {
-            FileName = publishedServerExecutablePath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
+            static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
+            var argumentList = string.Join(", ", args.Select(PsQuote));
+            var stdOut = _launchLogPath;
+            var stdErr = _launchLogPath + ".err";
+            var command =
+                $"$p = Start-Process -FilePath {PsQuote(executable)} " +
+                $"-ArgumentList @({argumentList}) -WorkingDirectory {PsQuote(directory)} " +
+                $"-RedirectStandardOutput {PsQuote(stdOut)} -RedirectStandardError {PsQuote(stdErr)} " +
+                "-WindowStyle Hidden -PassThru; Write-Output $p.Id";
+            startInfo = new ProcessStartInfo("powershell.exe");
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-Command");
+            startInfo.ArgumentList.Add(command);
+        }
+        else
+        {
+            static string ShQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+            var command = $"nohup {ShQuote(executable)} " +
+                string.Join(" ", args.Select(ShQuote)) +
+                $" >> {ShQuote(_launchLogPath)} 2>&1 </dev/null & echo $!";
+            startInfo = new ProcessStartInfo("/bin/sh");
+            startInfo.ArgumentList.Add("-c");
+            startInfo.ArgumentList.Add(command);
+        }
 
+        startInfo.WorkingDirectory = directory;
+        startInfo.UseShellExecute = false;
+        startInfo.RedirectStandardOutput = true;
+        startInfo.RedirectStandardError = true;
+        startInfo.CreateNoWindow = true;
         startInfo.Environment["ASPNETCORE_URLS"] = _options.UpstreamServerBaseAddress;
-
         return startInfo;
     }
 
@@ -280,16 +298,14 @@ public sealed class ServerProcessManager : IAsyncDisposable
                 return EndpointAvailability.Available();
             }
 
-            if (_ownedProcess is { HasExited: true } exitedProcess)
+            if (_ownedProcess is { HasExited: true } launcher)
             {
-                var failureMessage = CreateStartupFailureMessage(
-                    $"BrowserCommanderServer exited with code {exitedProcess.ExitCode}.");
+                var exitCode = launcher.ExitCode;
                 CleanupExitedOwnedProcess();
-                // Another concurrently starting bridge may be about to win the port.
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-                if (await IsEndpointReachableAsync(cancellationToken))
-                    return EndpointAvailability.Available();
-                return EndpointAvailability.Unavailable(failureMessage);
+                if (exitCode != 0)
+                    return EndpointAvailability.Unavailable(CreateStartupFailureMessage(
+                        $"BrowserCommanderServer launcher exited with code {exitCode}."));
+                // A successful detached launcher exits before the server is ready.
             }
 
             await Task.Delay(ProbeInterval, cancellationToken);
@@ -303,6 +319,15 @@ public sealed class ServerProcessManager : IAsyncDisposable
     private string CreateStartupFailureMessage(string reason)
     {
         var outputTail = GetCapturedOutputTail();
+        if (!string.IsNullOrWhiteSpace(_launchLogPath) && File.Exists(_launchLogPath))
+        {
+            try
+            {
+                var logTail = File.ReadLines(_launchLogPath).TakeLast(8);
+                outputTail = string.Join(" | ", logTail);
+            }
+            catch (IOException) { }
+        }
         return string.IsNullOrWhiteSpace(outputTail)
             ? $"{reason} Endpoint: {_options.UpstreamEndpoint}"
             : $"{reason} Endpoint: {_options.UpstreamEndpoint}. Recent output: {outputTail}";
