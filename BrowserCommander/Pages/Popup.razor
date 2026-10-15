@@ -10,8 +10,14 @@
     </header>
 
     <div class="popup-overview">
-        <span>Sync: <strong>@syncStatus</strong></span>
-        <span>Authorized: <strong>@authorizedTabs.Count / 64</strong></span>
+        <div class="popup-overview-item" title="Tabs authorized in this browser">
+            <span>Authorized locally</span>
+            <strong>@authorizedTabs.Count / 64</strong>
+        </div>
+        <div class="popup-overview-item" title="Pages available through MCP from all connected browsers">
+            <span>Available globally</span>
+            <strong>@(string.IsNullOrWhiteSpace(globalPagesError) ? globalTabCount.ToString() : "—")</strong>
+        </div>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(connectionError))
@@ -53,7 +59,7 @@
     </section>
 
     <details class="popup-disclosure">
-        <summary><span>Authorized tabs in this browser</span><span class="popup-count">@authorizedTabs.Count / 64</span></summary>
+        <summary><span>Tabs in this browser</span><span class="popup-count">@authorizedTabs.Count / 64</span></summary>
         <div class="popup-disclosure-body">
             @if (authorizedTabs.Count == 0)
             {
@@ -76,7 +82,7 @@
     </details>
 
     <details class="popup-disclosure">
-        <summary><span>Pages available through MCP</span><span class="popup-count">@globalTabCount</span></summary>
+        <summary><span>MCP pages (all browsers)</span><span class="popup-count">@(string.IsNullOrWhiteSpace(globalPagesError) ? globalTabCount.ToString() : "—")</span></summary>
         <div class="popup-disclosure-body">
             @if (!string.IsNullOrWhiteSpace(globalPagesError))
             {
@@ -88,6 +94,10 @@
             }
             else
             {
+                @if (authorizedTabs.Count == 0)
+                {
+                    <p class="popup-explanation">These pages are shared by other connected browsers.</p>
+                }
                 <div class="popup-list">
                     @foreach (var tab in globalPages)
                     {
