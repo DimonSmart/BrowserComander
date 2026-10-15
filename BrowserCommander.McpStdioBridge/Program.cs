@@ -32,7 +32,9 @@ var host = builder.Build();
 var serverProcessManager = host.Services.GetRequiredService<ServerProcessManager>();
 if (serverProcessManager.CanAutoStart)
 {
-    await serverProcessManager.EnsureEndpointAvailableAsync(CancellationToken.None);
+    var availability = await serverProcessManager.EnsureEndpointAvailableAsync(CancellationToken.None);
+    if (!availability.IsAvailable)
+        throw new InvalidOperationException(availability.FailureMessage ?? "BrowserCommanderServer is unavailable.");
 }
 
 await host.RunAsync();
