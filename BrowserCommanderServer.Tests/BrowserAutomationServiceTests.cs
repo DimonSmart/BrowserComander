@@ -8,223 +8,158 @@ namespace BrowserCommanderServer.Tests;
 public sealed class BrowserAutomationServiceTests
 {
     [Fact]
-    public void BrowserPageRef_RoundTripsAgentIdsThatRequireEscaping()
+    public void Pages_AreDistinctAcrossIndependentAgents_WithIdenticalTabIds()
     {
-        var pageId = BrowserPageRef.CreatePageId("shared:agent~edge-connection", 7);
-
-        var parsed = BrowserPageRef.TryParse(pageId, out var pageRef);
-
-        Assert.True(parsed);
-        Assert.Equal("shared:agent~edge-connection", pageRef.AgentId);
-        Assert.Equal(7, pageRef.TabId);
+        var service = CreateService();
+        service.RegisterAgent("edge", CreateRegistration("edge-agent", "Edge", CreateTab(7, "https://edge.example")));
+        service.RegisterAgent("chrome", CreateRegistration("chrome-agent", "Chrome", CreateTab(7, "https://chrome.example")));
+        Assert.Equal(2, service.GetPages().Count);
+        Assert.Contains(service.GetPages(), p => p.PageId == BrowserPageRef.CreatePageId("edge-agent", 7));
+        Assert.Contains(service.GetPages(), p => p.PageId == BrowserPageRef.CreatePageId("chrome-agent", 7));
     }
 
     [Fact]
-    public async Task GetPages_KeepsPagesDistinct_WhenTwoBrowsersUseSameTabId()
+    public void Registration_Takeover_PreservesPageId_AndOldDisconnectDoesNotDelete()
     {
         var service = CreateService();
-
-        service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.RegisterAgent("chrome-connection", CreateRegistration("chrome-agent", "Google Chrome", CreateTab(7, "https://chrome.example")));
-        await service.AuthorizeTabAsync("edge-agent", 7);
-        await service.AuthorizeTabAsync("chrome-agent", 7);
-
-        var pages = service.GetPages()
-            .OrderBy(page => page.AgentId, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(2, pages.Length);
-        Assert.Equal(["page:chrome-agent:7", "page:edge-agent:7"], pages.Select(page => page.PageId).ToArray());
-        Assert.Equal(new string?[] { "Google Chrome", "Microsoft Edge" }, pages.Select(page => page.BrowserName).ToArray());
+        var registration = CreateRegistration("same-agent", "Chrome", CreateTab(7, "https://example.com"));
+        var first = service.RegisterAgent("old", registration);
+        var before = Assert.Single(service.GetPages()).PageId;
+        var second = service.RegisterAgent("new", registration);
+        service.RemoveConnection("old");
+        Assert.Equal(before, Assert.Single(service.GetPages()).PageId);
+        Assert.True(second.StateRevision == first.StateRevision);
+        Assert.Equal("new", Assert.Single(service.GetAgents()).ConnectionId);
+        Assert.Throws<InvalidOperationException>(() => service.UpdateTabs("old",
+            new BrowserAgentTabsUpdate { AgentId = "same-agent", StateRevision = 2, Tabs = [] }));
     }
 
     [Fact]
-    public async Task RegisterAgent_AssignsUniqueServerSessionId_WhenReportedAgentIdCollides()
+    public void RevisionUpdate_IsAtomic_Idempotent_AndRejectsConflicts()
     {
         var service = CreateService();
-
-        service.RegisterAgent("edge-connection", CreateRegistration("shared-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.RegisterAgent("chrome-connection", CreateRegistration("shared-agent", "Google Chrome", CreateTab(9, "https://chrome.example")));
-        await service.AuthorizeTabAsync("shared-agent", 7);
-        await service.AuthorizeTabAsync("shared-agent~chrome-connection", 9);
-
-        var pages = service.GetPages()
-            .OrderBy(page => page.BrowserName, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Equal(2, pages.Length);
-
-        var chromePage = Assert.Single(pages, page => page.BrowserName == "Google Chrome");
-        var edgePage = Assert.Single(pages, page => page.BrowserName == "Microsoft Edge");
-
-        Assert.Equal("shared-agent", edgePage.AgentId);
-        Assert.StartsWith("shared-agent~chrome-connection", chromePage.AgentId, StringComparison.Ordinal);
-        Assert.Equal("shared-agent", chromePage.ReportedAgentId);
-        Assert.NotEqual(edgePage.PageId, chromePage.PageId);
-    }
-
-    [Fact]
-    public async Task UpdateTabs_UsesConnectionBinding_WhenReportedAgentIdCollides()
-    {
-        var service = CreateService();
-
-        service.RegisterAgent("edge-connection", CreateRegistration("shared-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        service.RegisterAgent("chrome-connection", CreateRegistration("shared-agent", "Google Chrome", CreateTab(9, "https://chrome.example")));
-        await service.AuthorizeTabAsync("shared-agent", 7);
-        await service.AuthorizeTabAsync("shared-agent~chrome-connection", 15);
-
-        service.UpdateTabs("chrome-connection", new BrowserAgentTabsUpdate
+        service.RegisterAgent("c1", CreateRegistration("agent", "Chrome", CreateTab(7, "https://old")));
+        var next = new BrowserAgentTabsUpdate
         {
-            AgentId = "shared-agent",
-            Tabs =
-            [
-                CreateTab(15, "https://chrome-updated.example")
-            ]
-        });
-
-        var pages = service.GetPages()
-            .OrderBy(page => page.BrowserName, StringComparer.Ordinal)
-            .ToArray();
-
-        Assert.Collection(
-            pages,
-            page =>
-            {
-                Assert.Equal("Google Chrome", page.BrowserName);
-                Assert.Equal(15, page.TabId);
-                Assert.StartsWith("shared-agent~chrome-connection", page.AgentId, StringComparison.Ordinal);
-            },
-            page =>
-            {
-                Assert.Equal("Microsoft Edge", page.BrowserName);
-                Assert.Equal(7, page.TabId);
-                Assert.Equal("shared-agent", page.AgentId);
-            });
+            AgentId = "agent", StateRevision = 2, Tabs = [CreateTab(8, "https://new")]
+        };
+        Assert.Equal(2, service.UpdateTabs("c1", next).StateRevision);
+        Assert.Equal(2, service.UpdateTabs("c1", next).StateRevision);
+        Assert.Throws<InvalidOperationException>(() => service.UpdateTabs("c1",
+            new BrowserAgentTabsUpdate { AgentId = "agent", StateRevision = 1, Tabs = [] }));
+        Assert.Throws<InvalidOperationException>(() => service.UpdateTabs("c1",
+            new BrowserAgentTabsUpdate { AgentId = "agent", StateRevision = 2, Tabs = [] }));
+        Assert.Equal(8, Assert.Single(service.GetPages()).TabId);
     }
 
     [Fact]
-    public async Task ExecuteCommand_ReturnsTabNotAuthorized_WhenTabWasNotAuthorized()
+    public void Registration_RejectsOldProtocol_AndEnforces64TabsPerAgent()
     {
         var service = CreateService();
-        service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
+        var invalid = CreateRegistration("a", "Chrome", CreateTab(1, "https://example.com"));
+        invalid.ProtocolVersion = "2";
+        Assert.Throws<InvalidOperationException>(() => service.RegisterAgent("c", invalid));
+        Assert.Empty(service.GetAgents());
 
-        var result = await service.ExecuteCommandAsync(
-            new BrowserAutomationCommand
-            {
-                AgentId = "edge-agent",
-                TabId = 7,
-                Action = BrowserCommandActions.PageTitle
-            },
-            CancellationToken.None);
-
-        Assert.False(result.Success);
-        Assert.Equal(BrowserCommandErrorCodes.TabNotAuthorized, result.ErrorCode);
+        var accepted = CreateRegistration("a", "Chrome", CreateTab(1, "https://example.com"));
+        accepted.Tabs = Enumerable.Range(1, 64).Select(n => CreateTab(n, "https://example.com")).ToList();
+        service.RegisterAgent("c", accepted);
+        var tooMany = new BrowserAgentTabsUpdate
+        {
+            AgentId = "a", StateRevision = 2,
+            Tabs = Enumerable.Range(1, 65).Select(n => CreateTab(n, "https://example.com")).ToList()
+        };
+        Assert.Throws<InvalidOperationException>(() => service.UpdateTabs("c", tooMany));
+        Assert.Equal(64, service.GetPages().Count);
+        service.RegisterAgent("other", CreateRegistration("b", "Edge", CreateTab(1, "https://edge.example")));
+        Assert.Equal(65, service.GetPages().Count);
     }
 
     [Fact]
-    public async Task ExecuteCommand_ReturnsRequestAborted_WhenCallerCancelsRequest()
+    public async Task Command_RejectsUnauthorizedTab_AndDisconnectCompletesPending()
     {
         var proxy = new TestClientProxy();
         var service = CreateService(proxy: proxy);
-        service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        await service.AuthorizeTabAsync("edge-agent", 7);
+        service.RegisterAgent("c1", CreateRegistration("a", "Chrome", CreateTab(7, "https://example.com")));
+        var denied = await service.ExecuteCommandAsync(new BrowserAutomationCommand
+        {
+            AgentId = "a", TabId = 8, Action = BrowserCommandActions.PageTitle
+        }, CancellationToken.None);
+        Assert.Equal(BrowserCommandErrorCodes.TabNotAuthorized, denied.ErrorCode);
 
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
-
-        var result = await service.ExecuteCommandAsync(
-            new BrowserAutomationCommand
-            {
-                AgentId = "edge-agent",
-                TabId = 7,
-                Action = BrowserCommandActions.PageTitle
-            },
-            cancellation.Token);
-
-        Assert.False(result.Success);
-        Assert.Equal(BrowserCommandErrorCodes.RequestAborted, result.ErrorCode);
-    }
-
-    [Fact]
-    public async Task ExecuteCommand_ReturnsAgentDisconnected_WhenConnectionIsRemovedWhilePending()
-    {
-        var proxy = new TestClientProxy();
-        var service = CreateService(proxy: proxy);
-        service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        await service.AuthorizeTabAsync("edge-agent", 7);
-
-        var executionTask = service.ExecuteCommandAsync(
-            new BrowserAutomationCommand
-            {
-                AgentId = "edge-agent",
-                TabId = 7,
-                Action = BrowserCommandActions.PageTitle
-            },
-            CancellationToken.None);
-
+        var pending = service.ExecuteCommandAsync(new BrowserAutomationCommand
+        {
+            AgentId = "a", TabId = 7, Action = BrowserCommandActions.PageTitle
+        }, CancellationToken.None);
         await proxy.WaitForCommandSentAsync();
-        service.RemoveConnection("edge-connection");
-
-        var result = await executionTask;
-
-        Assert.False(result.Success);
-        Assert.Equal(BrowserCommandErrorCodes.AgentDisconnected, result.ErrorCode);
+        service.RemoveConnection("c1");
+        Assert.Equal(BrowserCommandErrorCodes.AgentDisconnected, (await pending).ErrorCode);
     }
 
     [Fact]
-    public async Task CompleteCommand_LogsLateResult_WhenResultArrivesAfterCallerCanceled()
-    {
-        var proxy = new TestClientProxy();
-        var logger = new TestLogger<BrowserAutomationService>();
-        var service = CreateService(proxy, logger);
-        service.RegisterAgent("edge-connection", CreateRegistration("edge-agent", "Microsoft Edge", CreateTab(7, "https://edge.example")));
-        await service.AuthorizeTabAsync("edge-agent", 7);
-
-        using var cancellation = new CancellationTokenSource();
-        var executionTask = service.ExecuteCommandAsync(
-            new BrowserAutomationCommand
-            {
-                AgentId = "edge-agent",
-                TabId = 7,
-                Action = BrowserCommandActions.PageTitle
-            },
-            cancellation.Token);
-
-        var sentCommand = await proxy.WaitForCommandSentAsync();
-        cancellation.Cancel();
-
-        var abortedResult = await executionTask;
-        Assert.Equal(BrowserCommandErrorCodes.RequestAborted, abortedResult.ErrorCode);
-
-        service.CompleteCommand("edge-connection", new BrowserAutomationResult
-        {
-            CommandId = sentCommand.CommandId,
-            AgentId = "edge-agent",
-            TabId = 7,
-            Action = BrowserCommandActions.PageTitle,
-            Success = true,
-            Title = "Recovered title"
-        });
-
-        Assert.Contains(
-            logger.Entries,
-            entry => entry.LogLevel == LogLevel.Warning
-                     && entry.Message.Contains("late result", StringComparison.OrdinalIgnoreCase)
-                     && entry.Message.Contains(BrowserCommandErrorCodes.RequestAborted, StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public async Task ClearAllAuthorizations_BroadcastsRefreshAuthorizations()
+    public async Task Completion_MustMatchConnectionAgentTabAndAction()
     {
         var proxy = new TestClientProxy();
         var service = CreateService(proxy: proxy);
+        service.RegisterAgent("correct", CreateRegistration("a", "Chrome", CreateTab(7, "https://example.com")));
+        var pending = service.ExecuteCommandAsync(new BrowserAutomationCommand
+        {
+            AgentId = "a", TabId = 7, Action = BrowserCommandActions.PageTitle
+        }, CancellationToken.None);
+        var dispatched = await proxy.WaitForCommandSentAsync();
+        var response = new BrowserAutomationResult
+        {
+            CommandId = dispatched.CommandId, AgentId = "a", TabId = 7,
+            Action = BrowserCommandActions.PageTitle, Success = true, Title = "OK"
+        };
+        Assert.Throws<InvalidOperationException>(() => service.CompleteCommand("other", response));
+        response.TabId = 8;
+        Assert.Throws<InvalidOperationException>(() => service.CompleteCommand("correct", response));
+        response.TabId = 7;
+        service.CompleteCommand("correct", response);
+        Assert.Equal("OK", (await pending).Title);
+    }
 
-        await service.AuthorizeTabAsync("edge-agent", 7);
-        await service.ClearAllAuthorizationsAsync();
+    [Fact]
+    public async Task Takeover_CancelsCommandsFromDisplacedConnection()
+    {
+        var proxy = new TestClientProxy();
+        var service = CreateService(proxy: proxy);
+        var registration = CreateRegistration("a", "Chrome", CreateTab(7, "https://example.com"));
+        service.RegisterAgent("old", registration);
+        var pending = service.ExecuteCommandAsync(new BrowserAutomationCommand
+        {
+            AgentId = "a", TabId = 7, Action = BrowserCommandActions.PageTitle
+        }, CancellationToken.None);
+        await proxy.WaitForCommandSentAsync();
+        service.RegisterAgent("new", registration);
+        Assert.Equal("session_replaced", (await pending).ErrorCode);
+        Assert.Single(service.GetPages());
+    }
 
-        Assert.Contains(
-            BrowserCommanderHubMethods.RefreshAuthorizations,
-            proxy.SentMethods);
+    [Fact]
+    public async Task RevocationSnapshot_CancelsInFlightCommand()
+    {
+        var proxy = new TestClientProxy();
+        var service = CreateService(proxy: proxy);
+        service.RegisterAgent("c", CreateRegistration("a", "Chrome", CreateTab(7, "https://example.com")));
+        var pending = service.ExecuteCommandAsync(new BrowserAutomationCommand
+        {
+            AgentId = "a", TabId = 7, Action = BrowserCommandActions.PageTitle
+        }, CancellationToken.None);
+        await proxy.WaitForCommandSentAsync();
+        service.UpdateTabs("c", new BrowserAgentTabsUpdate { AgentId = "a", StateRevision = 2, Tabs = [] });
+        Assert.Equal(BrowserCommandErrorCodes.TabNotAuthorized, (await pending).ErrorCode);
+        Assert.Empty(service.GetPages());
+    }
+
+    [Fact]
+    public void PageId_Encoding_RemainsBackwardsCompatible()
+    {
+        var pageId = BrowserPageRef.CreatePageId("shared:agent", 7);
+        Assert.True(BrowserPageRef.TryParse(pageId, out var parsed));
+        Assert.Equal("shared:agent", parsed.AgentId);
+        Assert.Equal(7, parsed.TabId);
     }
 
     private static BrowserAutomationService CreateService(
@@ -242,6 +177,8 @@ public sealed class BrowserAutomationServiceTests
         {
             AgentId = agentId,
             BrowserName = browserName,
+            ProtocolVersion = BrowserCommanderProtocol.Version,
+            StateRevision = 1,
             Tabs = [tab]
         };
     }
