@@ -82,11 +82,22 @@ body:has(.popup-container) {
 }
 
 .popup-overview {
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    margin-top: 4px;
+    margin-top: 5px;
     color: #6b7280;
     font-size: 11px;
+}
+
+.popup-overview-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.popup-overview-item:last-child {
+    text-align: right;
 }
 
 .popup-overview strong {
@@ -283,7 +294,8 @@ body:has(.popup-container) {
     cursor: pointer;
 }
 
-.popup-empty {
+.popup-empty,
+.popup-explanation {
     margin: 4px 0 8px;
     color: #6b7280;
     font-size: 11px;
