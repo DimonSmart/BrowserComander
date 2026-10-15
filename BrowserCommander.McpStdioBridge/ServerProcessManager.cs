@@ -251,12 +251,14 @@ public sealed class ServerProcessManager : IAsyncDisposable
         if (OperatingSystem.IsWindows())
         {
             static string PsQuote(string value) => "'" + value.Replace("'", "''") + "'";
-            var argumentList = string.Join(", ", args.Select(PsQuote));
+            var argumentLine = string.Join(" ", args.Select(arg =>
+                arg.Any(char.IsWhiteSpace) ? "\\\"" + arg.Replace("\\\"", "\\\\\\\"") + "\\\"" : arg));
+            var argumentsPart = args.Count == 0 ? string.Empty : $"-ArgumentList {PsQuote(argumentLine)} ";
             var stdOut = _launchLogPath;
             var stdErr = _launchLogPath + ".err";
             var command =
                 $"$p = Start-Process -FilePath {PsQuote(executable)} " +
-                $"-ArgumentList @({argumentList}) -WorkingDirectory {PsQuote(directory)} " +
+                $"{argumentsPart}-WorkingDirectory {PsQuote(directory)} " +
                 $"-RedirectStandardOutput {PsQuote(stdOut)} -RedirectStandardError {PsQuote(stdErr)} " +
                 "-WindowStyle Hidden -PassThru; Write-Output $p.Id";
             startInfo = new ProcessStartInfo("powershell.exe");
