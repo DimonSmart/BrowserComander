@@ -64,6 +64,19 @@ public static class BrowserCommandDefaults
     public const int TimeoutMs = 30000;
 }
 
+public static class BrowserCommanderProtocol
+{
+    public const string Version = "3";
+    public const int MaxAuthorizedTabs = 64;
+}
+
+public sealed class BrowserSyncAcknowledgement
+{
+    public bool Accepted { get; set; } = true;
+    public string ServerInstanceId { get; set; } = string.Empty;
+    public long StateRevision { get; set; }
+}
+
 public static class BrowserCommanderHubMethods
 {
     public const string RegisterAgent = "RegisterAgent";
@@ -205,12 +218,16 @@ public sealed class BrowserAgentRegistration
 
     public BrowserAgentCapabilities Capabilities { get; set; } = new();
 
+    public long StateRevision { get; set; }
+
     public List<BrowserTabDescriptor> Tabs { get; set; } = [];
 }
 
 public sealed class BrowserAgentTabsUpdate
 {
     public string AgentId { get; set; } = string.Empty;
+
+    public long StateRevision { get; set; }
 
     public List<BrowserTabDescriptor> Tabs { get; set; } = [];
 }
