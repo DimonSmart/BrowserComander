@@ -38,16 +38,14 @@ public class BrowserCommanderHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
-    public Task RegisterAgent(BrowserAgentRegistration registration)
+    public Task<BrowserSyncAcknowledgement> RegisterAgent(BrowserAgentRegistration registration)
     {
-        _browserAutomationService.RegisterAgent(Context.ConnectionId, registration);
-        return Task.CompletedTask;
+        return Task.FromResult(_browserAutomationService.RegisterAgent(Context.ConnectionId, registration));
     }
 
-    public Task UpdateTabs(BrowserAgentTabsUpdate update)
+    public Task<BrowserSyncAcknowledgement> UpdateTabs(BrowserAgentTabsUpdate update)
     {
-        _browserAutomationService.UpdateTabs(Context.ConnectionId, update);
-        return Task.CompletedTask;
+        return Task.FromResult(_browserAutomationService.UpdateTabs(Context.ConnectionId, update));
     }
 
     public Task CompleteCommand(BrowserAutomationResult result)
