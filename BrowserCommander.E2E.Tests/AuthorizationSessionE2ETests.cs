@@ -44,6 +44,23 @@ public sealed class AuthorizationSessionE2ETests : BrowserCommanderE2ETestBase
         });
     }
 
+    [E2EFact]
+    public Task ServerRestart_RestoresConsentWithSamePageId()
+    {
+        return ExecuteAsync(nameof(ServerRestart_RestoresConsentWithSamePageId), async session =>
+        {
+            var page = await session.OpenPageAsync("/index.html");
+            var grant = await session.Extension.AuthorizeTabAsync(page);
+            Assert.True(grant.Ok, grant.Error);
+
+            var before = Assert.Single(await WaitForPagesAsync(session, 1));
+            await session.Server.RestartAsync();
+            var after = Assert.Single(await WaitForPagesAsync(session, 1));
+            Assert.Equal(before.PageId, after.PageId);
+            Assert.Equal(before.AgentId, after.AgentId);
+        });
+    }
+
     private static async Task<IReadOnlyList<BrowserCommanderServer.BrowserPageSummary>> WaitForPagesAsync(
         BrowserCommanderE2ESession session, int count)
     {
