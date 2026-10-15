@@ -23,8 +23,11 @@ internal sealed class BrowserCommanderServerFixture : IAsyncDisposable
             return;
         }
 
-        var port = PortAllocator.GetLoopbackPort();
-        BaseUri = new Uri($"http://127.0.0.1:{port}");
+        if (BaseUri is null)
+        {
+            var port = PortAllocator.GetLoopbackPort();
+            BaseUri = new Uri($"http://127.0.0.1:{port}");
+        }
 
         _host = Host.CreateDefaultBuilder()
             .ConfigureWebHostDefaults(webBuilder =>
@@ -47,6 +50,17 @@ internal sealed class BrowserCommanderServerFixture : IAsyncDisposable
         _host.Services.GetRequiredService<ILoggerFactory>().AddProvider(Logs);
 
         await _host.StartAsync();
+    }
+
+    public async Task RestartAsync()
+    {
+        if (_host is null)
+            throw new InvalidOperationException("BrowserCommanderServer was not started.");
+
+        await _host.StopAsync();
+        _host.Dispose();
+        _host = null;
+        await StartAsync(); // Rebind the original URL to model a real server process restart.
     }
 
     public async ValueTask DisposeAsync()
