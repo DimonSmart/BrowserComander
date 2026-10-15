@@ -1,357 +1,414 @@
 const RECORD_SEPARATOR = String.fromCharCode(0x1e);
-const AGENT_ID_KEY = 'browserCommander.agentId';
-const ALLOWED_TAB_IDS_KEY = 'browserCommander.allowedTabIds';
+const SESSION_STATE_KEY = 'browserCommander.authorizationState';
 const SERVER_ADDRESS_KEY = 'browserCommander.serverAddress';
 const COMMAND_TIMEOUT_KEY = 'browserCommander.commandTimeoutMs';
 const DEBUGGER_PROTOCOL_VERSION = '1.3';
 const DEBUGGER_BUFFER_LIMIT = 200;
-const BROWSER_COMMANDER_PROTOCOL_VERSION = '2';
-const MAX_PENDING_COMMAND_RESULTS = 50;
-const COMMAND_RESULT_MIN_RETRY_WINDOW_MS = 15000;
-const COMMAND_RESULT_RETRY_BUFFER_MS = 5000;
-const PACKAGED_DEFAULT_COMMAND_TIMEOUT_MS = 30000;
+const BROWSER_COMMANDER_PROTOCOL_VERSION = '3';
+const MAX_AUTHORIZED_TABS = 64;
 const ACTION_DEFAULT_TITLE = 'BrowserCommander';
 const ACTION_AUTHORIZED_TITLE = 'BrowserCommander is authorized for this tab.';
 const ACTION_AUTHORIZED_BADGE_TEXT = 'ON';
 const ACTION_AUTHORIZED_BADGE_BACKGROUND_COLOR = '#2563EB';
+const RECONNECT_ALARM = 'browserCommander.reconnect';
+const STORAGE_RETRY_ALARM = 'browserCommander.storageRetry';
 const debuggerSessions = new Map();
 
 const state = {
   agentId: null,
-  browserName: null,
+  stateRevision: 0,
+  authorizedTabRecords: [],
+  authorizedTabIds: [],
+  blockedTabIds: new Set(),
+  initializePromise: null,
+  initialized: false,
+  initializeError: null,
+  mutationQueue: Promise.resolve(),
+  connectionGeneration: 0,
+  currentConnection: null,
   connectPromise: null,
   connected: false,
-  keepAliveTimer: null,
-  reconnectTimer: null,
+  connectionStatus: 'Disconnected',
+  syncStatus: 'Pending',
+  lastAcknowledgedRevision: -1,
+  serverInstanceId: null,
+  lastSyncAt: null,
+  lastErrorCode: null,
+  lastError: null,
+  browserName: null,
   serverAddress: null,
   defaultServerAddress: null,
   commandTimeout: null,
   defaultCommandTimeout: null,
-  suppressReconnect: false,
-  socket: null,
-  socketBuffer: '',
-  authorizedTabIds: [],
+  reconnectTimer: null,
+  reconnectAttempts: 0,
+  metadataTimer: null,
+  publishRequested: false,
+  publishPromise: null,
   tabIndicatorOverrideTabIds: [],
   pendingCommandResults: [],
   flushingPendingCommandResults: false
 };
 
 chrome.debugger.onEvent.addListener((source, method, params) => {
-  const tabId = source?.tabId;
-  if (!Number.isInteger(tabId)) {
-    return;
-  }
-
-  const session = debuggerSessions.get(tabId);
-  if (!session) {
-    return;
-  }
-
-  handleDebuggerEvent(session, method, params);
+  const session = debuggerSessions.get(source?.tabId);
+  if (session) handleDebuggerEvent(session, method, params);
 });
-
 chrome.debugger.onDetach.addListener((source, reason) => {
-  const tabId = source?.tabId;
-  if (!Number.isInteger(tabId)) {
-    return;
-  }
-
-  debuggerSessions.delete(tabId);
-  console.warn(`Debugger detached from tab ${tabId}. Reason: ${reason}.`);
+  if (Number.isInteger(source?.tabId)) debuggerSessions.delete(source.tabId);
+  console.warn('Debugger detached:', reason);
 });
-
 chrome.runtime.onInstalled.addListener(async () => {
-  try {
-    await bootstrapAgent();
-  } catch (error) {
-    console.warn('BrowserCommander bootstrap failed during installation.', error);
-  }
-
+  try { await bootstrapAgent(); } catch (error) { console.warn('Bootstrap failed.', error); }
   await chrome.tabs.create({ url: chrome.runtime.getURL('index.html') });
 });
-
-chrome.runtime.onStartup.addListener(async () => {
-  try {
-    await bootstrapAgent();
-  } catch (error) {
-    console.warn('BrowserCommander bootstrap failed on startup.', error);
-  }
+chrome.runtime.onStartup.addListener(() => { void bootstrapAgent().catch(recordError); });
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === RECONNECT_ALARM) void ensureConnected().catch(recordError);
+  if (alarm.name === STORAGE_RETRY_ALARM) void retryFailedRevocations();
 });
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const supportedMessageTypes = new Set([
-    'wake',
-    'status',
-    'getExtensionSettings',
-    'saveExtensionSettings',
-    'authorizeTab',
-    'revokeTab',
-    'clearAuthorizedTabs',
-    'getGlobalPages'
-  ]);
-
-  if (!supportedMessageTypes.has(message?.type)) {
-    return false;
-  }
-
+  const supported = new Set(['wake', 'status', 'getExtensionSettings', 'saveExtensionSettings',
+    'authorizeTab', 'revokeTab', 'clearAuthorizedTabs', 'getGlobalPages']);
+  if (!supported.has(message?.type)) return false;
   void (async () => {
     try {
-      switch (message.type) {
-        case 'getExtensionSettings':
-          sendResponse(await getExtensionSettings());
-          return;
-        case 'getGlobalPages':
-          sendResponse(await getGlobalPages());
-          return;
-        case 'saveExtensionSettings':
-          await saveExtensionSettings(message);
-          break;
-        case 'authorizeTab':
-          await authorizeTab(message.tabId);
-          break;
-        case 'revokeTab':
-          await revokeTab(message.tabId);
-          break;
-        case 'clearAuthorizedTabs':
-          await clearAuthorizedTabs();
-          break;
+      if (message.type === 'getExtensionSettings') {
+        sendResponse(await getExtensionSettings());
+        return;
       }
-
       await bootstrapAgent();
+      if (message.type === 'getGlobalPages') {
+        sendResponse(await getGlobalPages());
+        return;
+      }
+      switch (message.type) {
+        case 'saveExtensionSettings': await saveExtensionSettings(message); break;
+        case 'authorizeTab': await authorizeTab(message.tabId); break;
+        case 'revokeTab': await revokeTab(message.tabId); break;
+        case 'clearAuthorizedTabs': await clearAuthorizedTabs(); break;
+      }
       sendResponse(await createStatusResponse());
     } catch (error) {
-      sendResponse({
-        ok: false,
-        agentId: state.agentId,
-        connected: state.connected,
-        allowedTabs: await getAuthorizedTabsSnapshotSafe(),
-        error: String(error)
-      });
+      recordError(error);
+      sendResponse({ ...(await createStatusResponse(true)), ok: false, error: String(error),
+        errorCode: error?.code ?? (state.initializeError ? 'storage_failed' : 'operation_failed') });
     }
   })();
-
   return true;
 });
-
-chrome.tabs.onActivated.addListener(() => {
-  void publishTabs();
-});
-
-chrome.tabs.onCreated.addListener(() => {
-  void publishTabs();
-});
-
+chrome.tabs.onActivated.addListener(() => { scheduleMetadataPublish(); });
+chrome.tabs.onCreated.addListener(() => { scheduleMetadataPublish(); });
+chrome.tabs.onUpdated.addListener(() => { scheduleMetadataPublish(); });
 chrome.tabs.onRemoved.addListener(tabId => {
+  state.blockedTabIds.add(tabId);
   forgetTabIndicatorOverride(tabId);
-  void removeMissingAuthorizedTabs([tabId]);
+  void removeMissingAuthorizedTabs([tabId]).catch(recordError);
   void detachDebuggerSession(tabId);
-  void publishTabs();
 });
+void bootstrapAgent().catch(recordError);
 
-chrome.tabs.onUpdated.addListener(() => {
-  void publishTabs();
-});
+function recordError(error) {
+  state.lastError = String(error);
+  state.lastErrorCode = error?.code ?? 'operation_failed';
+  console.warn('BrowserCommander:', error);
+}
 
-void bootstrapAgent();
+function createError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 async function bootstrapAgent() {
-  state.agentId ??= await getOrCreateAgentId();
-  state.commandTimeout = await getConfiguredCommandTimeout();
-  await storeAuthorizedTabIds(await fetchAuthorizedTabIdsFromServer());
-  await ensureDebuggerSessionsForAuthorizedTabs();
-  await ensureConnected();
+  if (state.initialized) return;
+  if (state.initializeError) throw state.initializeError;
+  if (state.initializePromise) return state.initializePromise;
+  state.initializePromise = (async () => {
+    try {
+      const stored = (await chrome.storage.session.get(SESSION_STATE_KEY))[SESSION_STATE_KEY];
+      if (stored !== undefined && (!stored || stored.schemaVersion !== 1
+        || typeof stored.sessionAgentId !== 'string' || !stored.sessionAgentId
+        || !Number.isSafeInteger(stored.stateRevision) || stored.stateRevision < 0
+        || !Array.isArray(stored.authorizedTabs)
+        || stored.authorizedTabs.length > MAX_AUTHORIZED_TABS
+        || stored.authorizedTabs.some(tab => !Number.isInteger(tab.tabId) || tab.tabId <= 0
+          || !Number.isInteger(tab.windowId) || tab.windowId < 0)
+        || new Set(stored.authorizedTabs.map(tab => tab.tabId)).size !== stored.authorizedTabs.length)) {
+        throw createError('storage_failed', 'Invalid authorization state in session storage.');
+      }
+      const records = stored?.authorizedTabs ?? [];
+      const existing = await chrome.tabs.query({});
+      const existingById = new Map(existing.map(tab => [tab.id, tab]));
+      const retained = records.filter(tab =>
+        existingById.has(tab.tabId) && existingById.get(tab.tabId).windowId === tab.windowId
+        && !state.blockedTabIds.has(tab.tabId));
+      const next = {
+        schemaVersion: 1,
+        sessionAgentId: stored?.sessionAgentId ?? crypto.randomUUID(),
+        stateRevision: (stored?.stateRevision ?? 0) + (retained.length !== records.length ? 1 : 0),
+        authorizedTabs: retained
+      };
+      if (!stored || retained.length !== records.length)
+        await chrome.storage.session.set({ [SESSION_STATE_KEY]: next });
+      state.agentId = next.sessionAgentId;
+      state.stateRevision = next.stateRevision;
+      state.authorizedTabRecords = next.authorizedTabs;
+      state.authorizedTabIds = normalizeTabIds(next.authorizedTabs.map(tab => tab.tabId));
+      state.commandTimeout = await getConfiguredCommandTimeout();
+      state.initialized = true;
+      await syncAuthorizedTabIndicators();
+      void ensureDebuggerSessionsForAuthorizedTabs();
+      void ensureConnected().catch(recordError);
+    } catch (error) {
+      state.initializeError = createError('storage_failed', String(error));
+      throw state.initializeError;
+    }
+  })();
+  return state.initializePromise;
+}
+
+// All read/modify/write operations share a single queue; failed writes do not publish memory.
+function enqueueMutation(transform) {
+  const work = state.mutationQueue.catch(() => {}).then(async () => {
+    await bootstrapAgent();
+    const before = state.authorizedTabRecords;
+    const after = await transform([...before]);
+    if (after === null) return false;
+    if (after.length > MAX_AUTHORIZED_TABS)
+      throw createError('authorization_limit_reached', 'The limit of 64 authorized tabs has been reached.');
+    const revision = state.stateRevision + 1;
+    const next = {
+      schemaVersion: 1, sessionAgentId: state.agentId,
+      stateRevision: revision, authorizedTabs: after
+    };
+    await chrome.storage.session.set({ [SESSION_STATE_KEY]: next });
+    state.authorizedTabRecords = after;
+    state.authorizedTabIds = normalizeTabIds(after.map(tab => tab.tabId));
+    state.stateRevision = revision;
+    await syncAuthorizedTabIndicators();
+    void publishTabs();
+    return true;
+  });
+  state.mutationQueue = work;
+  return work;
 }
 
 async function ensureConnected() {
-  if (state.connected && state.socket?.readyState === WebSocket.OPEN) {
-    return;
+  await bootstrapAgent();
+  if (state.currentConnection?.socket.readyState === WebSocket.OPEN && state.connected) return;
+  if (state.connectPromise) return state.connectPromise;
+  const promise = connectCore();
+  state.connectPromise = promise;
+  try { await promise; } finally {
+    if (state.connectPromise === promise) state.connectPromise = null;
   }
-
-  if (state.connectPromise) {
-    return state.connectPromise;
-  }
-
-  state.connectPromise = connectCore().finally(() => {
-    state.connectPromise = null;
-  });
-
-  return state.connectPromise;
 }
 
 async function connectCore() {
   clearReconnectTimer();
-
-  const serverAddress = await getServerAddress();
-  const negotiateResponse = await fetch(`${serverAddress}/browserCommanderHub/negotiate?negotiateVersion=1`, {
-    method: 'POST'
-  });
-
-  if (!negotiateResponse.ok) {
-    throw new Error(`SignalR negotiate failed with HTTP ${negotiateResponse.status}.`);
-  }
-
-  const negotiatePayload = await negotiateResponse.json();
-  const socketUrl = createWebSocketUrl(serverAddress, negotiatePayload.connectionToken);
-
-  await new Promise((resolve, reject) => {
-    let handshakeCompleted = false;
-    const socket = new WebSocket(socketUrl);
-    state.socket = socket;
-    state.socketBuffer = '';
-
-    const fail = error => {
-      if (!handshakeCompleted) {
-        reject(error);
-      }
-    };
-
-    socket.addEventListener('open', () => {
-      socket.send(JSON.stringify({ protocol: 'json', version: 1 }) + RECORD_SEPARATOR);
-    }, { once: true });
-
-    socket.addEventListener('message', event => {
-      for (const message of parseHubMessages(event.data)) {
-        if (!handshakeCompleted) {
-          handshakeCompleted = true;
-          state.connected = true;
-          startKeepAlive();
-          void initializeConnectedSession();
-          resolve();
-          continue;
+  state.connectionStatus = 'Connecting';
+  const generation = ++state.connectionGeneration;
+  try {
+    const serverAddress = await getServerAddress();
+    const response = await fetch(`${serverAddress}/browserCommanderHub/negotiate?negotiateVersion=1`,
+      { method: 'POST' });
+    if (!response.ok) throw createError('server_unavailable', `SignalR negotiate returned ${response.status}`);
+    const payload = await response.json();
+    if (!payload.connectionToken) throw createError('protocol_incompatible', 'No SignalR connection token.');
+    if (generation !== state.connectionGeneration) return;
+    const socket = new WebSocket(createWebSocketUrl(serverAddress, payload.connectionToken));
+    const connection = { socket, generation, buffer: '', pending: new Map(), invocationId: 0,
+      registered: false, acknowledgedRevision: -1, acknowledgedSnapshot: null, closed: false };
+    state.currentConnection = connection;
+    await new Promise((resolve, reject) => {
+      let handshaken = false;
+      const timer = setTimeout(() => reject(createError('protocol_incompatible', 'SignalR handshake timeout.')), 10000);
+      const valid = () => state.currentConnection === connection && generation === state.connectionGeneration;
+      socket.addEventListener('open', () => {
+        if (valid()) socket.send(JSON.stringify({ protocol: 'json', version: 1 }) + RECORD_SEPARATOR);
+      });
+      socket.addEventListener('message', event => {
+        if (!valid()) return;
+        try {
+          for (const message of parseHubMessages(event.data, connection)) {
+            if (!handshaken) {
+              if (message.type !== undefined || message.error)
+                throw createError('protocol_incompatible', message.error ?? 'Invalid SignalR handshake response.');
+              handshaken = true;
+              clearTimeout(timer);
+              state.connected = true;
+              state.connectionStatus = 'Connected';
+              state.syncStatus = 'Registering';
+              state.reconnectAttempts = 0;
+              startKeepAlive(connection);
+              resolve();
+            } else if (message.type === 3) {
+              const pending = connection.pending.get(message.invocationId);
+              if (pending) {
+                connection.pending.delete(message.invocationId);
+                clearTimeout(pending.timeout);
+                if (message.error) pending.reject(createError('sync_failed', message.error));
+                else pending.resolve(message.result);
+              }
+            } else if (message.type === 1) {
+              void handleHubMessageSafe(message, connection);
+            } else if (message.type === 7) {
+              socket.close();
+            } else if (message.type !== 6) {
+              recordError(createError('protocol_incompatible', 'Unknown SignalR frame.'));
+            }
+          }
+        } catch (error) {
+          clearTimeout(timer);
+          if (!handshaken) reject(error);
+          socket.close();
         }
-
-        void handleHubMessageSafe(message);
-      }
+      });
+      socket.addEventListener('error', () => {
+        if (!handshaken) { clearTimeout(timer); reject(createError('server_unavailable', 'WebSocket error.')); }
+      });
+      socket.addEventListener('close', () => {
+        clearTimeout(timer);
+        closeConnection(connection);
+        if (!handshaken) reject(createError('server_unavailable', 'WebSocket closed before handshake.'));
+      }, { once: true });
     });
-
-    socket.addEventListener('error', () => {
-      fail(new Error('SignalR WebSocket failed.'));
-    });
-
-    socket.addEventListener('close', event => {
-      const closedBeforeHandshake = !handshakeCompleted;
-      const suppressReconnect = state.suppressReconnect;
-      state.suppressReconnect = false;
-      cleanupSocket();
-      if (!suppressReconnect) {
-        scheduleReconnect();
-      }
-
-      if (closedBeforeHandshake) {
-        reject(new Error(`SignalR socket closed before handshake. Code ${event.code}.`));
-      }
-    }, { once: true });
-  });
+    if (state.currentConnection === connection) void publishTabs();
+  } catch (error) {
+    if (generation === state.connectionGeneration) {
+      state.connectionStatus = 'Disconnected';
+      state.syncStatus = 'Pending';
+      recordError(error);
+      scheduleReconnect();
+    }
+    throw error;
+  }
 }
 
-async function registerAgent() {
-  if (!state.connected) {
-    return;
+function closeConnection(connection) {
+  if (connection.closed) return;
+  connection.closed = true;
+  for (const pending of connection.pending.values()) {
+    clearTimeout(pending.timeout);
+    pending.reject(createError('agent_disconnected', 'SignalR connection lost.'));
   }
+  connection.pending.clear();
+  if (state.currentConnection !== connection) return;
+  state.currentConnection = null;
+  state.connected = false;
+  state.connectionStatus = 'Disconnected';
+  state.syncStatus = 'Pending';
+  state.lastAcknowledgedRevision = -1;
+  stopKeepAlive();
+  scheduleReconnect();
+}
 
+async function registerAgent(connection, snapshot, revision) {
   state.browserName ??= await detectBrowserName();
-
-  await sendInvocation('RegisterAgent', [{
+  return sendInvocation('RegisterAgent', [{
     agentId: state.agentId,
     extensionId: chrome.runtime.id,
     browserName: state.browserName,
     userAgent: navigator.userAgent,
     protocolVersion: BROWSER_COMMANDER_PROTOCOL_VERSION,
+    stateRevision: revision,
     defaultCommandTimeoutMs: await getConfiguredCommandTimeout(),
     capabilities: {
-      supportsPlanExecution: true,
-      supportsContentScriptSteps: true,
-      supportsDebuggerSteps: true,
-      supportsTabSteps: true
+      supportsPlanExecution: true, supportsContentScriptSteps: true,
+      supportsDebuggerSteps: true, supportsTabSteps: true
     },
-    tabs: await getAuthorizedTabsSnapshot()
-  }]);
+    tabs: snapshot
+  }], connection);
 }
 
-async function initializeConnectedSession() {
-  try {
-    await registerAgent();
-  } catch (error) {
-    console.warn('Failed to register browser agent after SignalR handshake.', error);
-    return;
-  }
-
-  await flushPendingCommandResults();
+function scheduleMetadataPublish() {
+  if (state.metadataTimer) return;
+  state.metadataTimer = setTimeout(() => {
+    state.metadataTimer = null;
+    void publishTabs();
+  }, 90);
 }
 
 async function publishTabs() {
-  try {
-    await pruneAuthorizedTabs();
-    await ensureConnected();
-  } catch (error) {
-    console.warn('Failed to establish connection before tabs update.', error);
-    return;
-  }
-
-  if (!state.connected) {
-    return;
-  }
-
-  try {
-    await sendInvocation('UpdateTabs', [{
-      agentId: state.agentId,
-      tabs: await getAuthorizedTabsSnapshot()
-    }]);
-  } catch (error) {
-    console.warn('Failed to publish authorized tabs to the server.', error);
-  }
-}
-
-async function handleHubMessageSafe(message) {
-  try {
-    await handleHubMessage(message);
-  } catch (error) {
-    console.warn('Unhandled failure while processing a SignalR hub message.', error);
-  }
-}
-
-async function handleHubMessage(message) {
-  if (message.type !== 1) {
-    return;
-  }
-
-  switch (message.target) {
-    case 'ExecuteCommand': {
-      const command = message.arguments?.[0];
-      if (!command) {
-        return;
+  state.publishRequested = true;
+  if (state.publishPromise) return state.publishPromise;
+  const work = (async () => {
+    try {
+      await bootstrapAgent();
+      await state.mutationQueue.catch(() => {});
+      while (state.publishRequested) {
+        state.publishRequested = false;
+        if (!state.connected) {
+          try { await ensureConnected(); } catch { return; }
+        }
+        const connection = state.currentConnection;
+        if (!connection || connection.socket.readyState !== WebSocket.OPEN) return;
+        let snapshot = await getAuthorizedTabsSnapshot();
+        let revision = state.stateRevision;
+        let signature = JSON.stringify(snapshot);
+        if (connection.registered && revision <= connection.acknowledgedRevision
+          && signature !== connection.acknowledgedSnapshot) {
+          await enqueueMutation(records => records);
+          snapshot = await getAuthorizedTabsSnapshot();
+          revision = state.stateRevision;
+          signature = JSON.stringify(snapshot);
+        }
+        state.syncStatus = connection.registered ? 'Pending' : 'Registering';
+        const ack = connection.registered
+          ? await sendInvocation('UpdateTabs', [{
+              agentId: state.agentId, stateRevision: revision, tabs: snapshot
+            }], connection)
+          : await registerAgent(connection, snapshot, revision);
+        if (state.currentConnection !== connection) return;
+        if (!ack?.accepted || ack.stateRevision !== revision || !ack.serverInstanceId)
+          throw createError('sync_failed', 'Invalid synchronization acknowledgement.');
+        if (state.serverInstanceId && state.serverInstanceId !== ack.serverInstanceId)
+          connection.registered = false;
+        state.serverInstanceId = ack.serverInstanceId;
+        connection.acknowledgedRevision = revision;
+        connection.acknowledgedSnapshot = signature;
+        connection.registered = true;
+        state.lastAcknowledgedRevision = revision;
+        state.lastSyncAt = new Date().toISOString();
+        if (revision === state.stateRevision) state.syncStatus = 'Synced';
+        else { state.syncStatus = 'Pending'; state.publishRequested = true; }
+        await flushPendingCommandResults();
       }
-
-      await executeCommandAndReportResult(command);
-      return;
+    } catch (error) {
+      state.syncStatus = 'Failed';
+      recordError(error);
+      if (state.currentConnection) {
+        const c = state.currentConnection;
+        c.socket.close();
+        closeConnection(c);
+      }
     }
-    case 'RefreshAuthorizations':
-      await refreshAuthorizedTabsFromServer();
-      return;
-    default:
-      return;
+  })();
+  state.publishPromise = work;
+  try { await work; } finally {
+    if (state.publishPromise === work) state.publishPromise = null;
+    if (state.publishRequested) void publishTabs();
   }
 }
 
-async function executeCommandAndReportResult(command) {
-  let result = null;
-
+async function handleHubMessageSafe(message, connection) {
   try {
-    result = await executeCommand(command);
-  } catch (error) {
-    console.warn(
-      `Command execution failed before a completion result was produced (${formatCommandLogContext(command)}).`,
-      error);
-    result = createUnexpectedCommandFailureResult(command, error);
-  }
+    if (connection !== state.currentConnection || !connection.registered) return;
+    if (message.target === 'ExecuteCommand' && message.arguments?.[0]) {
+      await executeCommandAndReportResult(message.arguments[0], connection);
+    }
+    // RefreshAuthorizations is an obsolete server-to-browser message, intentionally ignored.
+  } catch (error) { recordError(error); }
+}
 
+async function executeCommandAndReportResult(command, connection) {
+  let result;
+  try { result = await executeCommand(command); }
+  catch (error) { result = createUnexpectedCommandFailureResult(command, error); }
   try {
-    await sendCommandCompletion(result, command);
-  } catch (error) {
-    console.warn(
-      `Failed to send completion result (${formatCommandLogContext(result ?? command)}). Queued for retry.`,
-      error);
-  }
+    if (state.currentConnection === connection) await sendCommandCompletion(result, command, connection);
+  } catch (error) { recordError(error); }
 }
 
 async function executeCommand(command) {
