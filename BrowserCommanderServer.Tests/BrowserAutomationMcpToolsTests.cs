@@ -263,12 +263,14 @@ public sealed class BrowserAutomationMcpToolsTests
 
         public BrowserAutomationCommand? LastCommand { get; private set; }
 
-        public void RegisterAgent(string connectionId, BrowserAgentRegistration registration)
+        public BrowserSyncAcknowledgement RegisterAgent(string connectionId, BrowserAgentRegistration registration)
         {
+            return new BrowserSyncAcknowledgement();
         }
 
-        public void UpdateTabs(string connectionId, BrowserAgentTabsUpdate update)
+        public BrowserSyncAcknowledgement UpdateTabs(string connectionId, BrowserAgentTabsUpdate update)
         {
+            return new BrowserSyncAcknowledgement();
         }
 
         public void CompleteCommand(string connectionId, BrowserAutomationResult result)
@@ -282,23 +284,6 @@ public sealed class BrowserAutomationMcpToolsTests
         public IReadOnlyCollection<BrowserAgentStatus> GetAgents() => Agents;
 
         public IReadOnlyCollection<BrowserPageSummary> GetPages() => Pages;
-
-        public Task AuthorizeTabAsync(string agentId, int tabId)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task RevokeTabAsync(string agentId, int tabId)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task ClearAllAuthorizationsAsync()
-        {
-            return Task.CompletedTask;
-        }
-
-        public IReadOnlyCollection<int> GetAuthorizedTabIds(string agentId) => [];
 
         public Task<BrowserAutomationResult> ExecuteCommandAsync(
             BrowserAutomationCommand command,
