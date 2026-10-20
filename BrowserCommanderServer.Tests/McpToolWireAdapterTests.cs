@@ -122,7 +122,7 @@ public sealed class McpToolWireAdapterTests
         tool.Title = "Title";
         tool.Annotations = new ToolAnnotations { ReadOnlyHint = true };
         tool.Meta = new JsonObject { ["key"] = "value" };
-        var image = ImageContentBlock.FromBytes([1, 2, 3], "image/png");
+        var image = ImageContentBlock.FromBytes(new byte[] { 1, 2, 3 }, "image/png");
         var original = new CallToolResult
         {
             Content = [image],
