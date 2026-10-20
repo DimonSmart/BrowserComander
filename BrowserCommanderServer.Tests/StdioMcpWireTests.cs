@@ -90,9 +90,21 @@ public sealed class StdioMcpWireTests
     }
 
     private static string NewRequest(int id, string method) =>
-        $$"""
-          {"jsonrpc":"2.0","id":{{id}},"method":"{{method}}","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"raw-wire-test","version":"1.0"},"io.modelcontextprotocol/clientCapabilities":{}}}}
-          """;
+        JsonSerializer.Serialize(new
+        {
+            jsonrpc = "2.0",
+            id,
+            method,
+            @params = new
+            {
+                _meta = new Dictionary<string, object>
+                {
+                    ["io.modelcontextprotocol/protocolVersion"] = "2026-07-28",
+                    ["io.modelcontextprotocol/clientInfo"] = new { name = "raw-wire-test", version = "1.0" },
+                    ["io.modelcontextprotocol/clientCapabilities"] = new { }
+                }
+            }
+        });
 
     private static async Task<JsonDocument> SendAsync(Process process, string request, CancellationToken token)
     {
