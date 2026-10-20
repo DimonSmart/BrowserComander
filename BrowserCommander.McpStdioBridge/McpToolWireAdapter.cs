@@ -62,13 +62,18 @@ public static class McpToolWireAdapter
             return source;
 
         bool schemaNeedsEnvelope = naturalTool?.OutputSchema is { } schema && NeedsEnvelope(schema);
+        // MCP SDK 2.0's legacy upstream path historically *does not* wrap
+        // nullable objects (type: ["object", "null"]); their "result"
+        // property, when present, is user data rather than an envelope.
+        bool upstreamWraps = naturalTool?.OutputSchema is { } sourceSchema &&
+            NeedsEnvelope(sourceSchema) && !IsNullableObject(sourceSchema);
         JsonElement naturalValue = value;
         bool removedUpstreamEnvelope = false;
 
         // Version 2 of the SDK wraps non-object output when calling a legacy
         // upstream. Undo that single upstream adaptation before applying the
         // independent downstream contract.
-        if (schemaNeedsEnvelope && RequiresLegacyOutput(upstreamVersion) &&
+        if (upstreamWraps && RequiresLegacyOutput(upstreamVersion) &&
             value.ValueKind == JsonValueKind.Object &&
             value.TryGetProperty("result", out JsonElement inner) &&
             value.EnumerateObject().Count() == 1)
@@ -101,6 +106,21 @@ public static class McpToolWireAdapter
             Meta = source.Meta,
             ResultType = source.ResultType
         };
+    }
+
+    private static bool IsNullableObject(JsonElement schema)
+    {
+        if (schema.ValueKind != JsonValueKind.Object ||
+            !schema.TryGetProperty("type", out var type) ||
+            type.ValueKind != JsonValueKind.Array)
+            return false;
+
+        var types = type.EnumerateArray().ToArray();
+        return types.Length == 2 &&
+            types.Any(value => value.ValueKind == JsonValueKind.String &&
+                               value.GetString() == "object") &&
+            types.Any(value => value.ValueKind == JsonValueKind.String &&
+                               value.GetString() == "null");
     }
 
     private static bool NeedsEnvelope(JsonElement schema) =>
