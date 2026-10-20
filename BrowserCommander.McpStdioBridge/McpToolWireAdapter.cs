@@ -63,6 +63,7 @@ public static class McpToolWireAdapter
 
         bool schemaNeedsEnvelope = naturalTool?.OutputSchema is { } schema && NeedsEnvelope(schema);
         JsonElement naturalValue = value;
+        bool removedUpstreamEnvelope = false;
 
         // Version 2 of the SDK wraps non-object output when calling a legacy
         // upstream. Undo that single upstream adaptation before applying the
@@ -73,10 +74,14 @@ public static class McpToolWireAdapter
             value.EnumerateObject().Count() == 1)
         {
             naturalValue = inner.Clone();
+            removedUpstreamEnvelope = true;
         }
 
         bool wrapForDownstream = RequiresLegacyOutput(downstreamVersion) &&
             (schemaNeedsEnvelope || naturalValue.ValueKind != JsonValueKind.Object);
+
+        if (!wrapForDownstream && !removedUpstreamEnvelope)
+            return source;
 
         JsonElement downstreamValue = wrapForDownstream
             ? JsonSerializer.SerializeToElement(new Dictionary<string, JsonElement>
