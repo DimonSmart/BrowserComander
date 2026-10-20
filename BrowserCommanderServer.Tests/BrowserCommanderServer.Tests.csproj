@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BrowserCommanderServer\BrowserCommanderServer.csproj" />
+    <ProjectReference Include="..\BrowserCommander.McpStdioBridge\BrowserCommander.McpStdioBridge.csproj" />
   </ItemGroup>
 
 </Project>

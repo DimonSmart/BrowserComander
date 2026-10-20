@@ -35,6 +35,9 @@
         </section>
 
         <section class="content-card">
+            <h2>Claude Code: Connected · tools fetch failed</h2>
+            <p>If Claude Code reports <span class="mono">tools.0.outputSchema: Invalid input</span>, the bridge process has started, but its published MCP tool schema is rejected. Update and rebuild <span class="mono">BrowserCommander.McpStdioBridge</span> with the legacy-schema compatibility fix, then reconnect the MCP client. You do not need to change the command path or the upstream URL.</p>
+            <p>This differs from a startup or HTTP reachability failure: those prevent the process or upstream from connecting. For schema failures, inspect the serialized <span class="mono">tools/list</span> response and the downstream negotiated MCP version. Other causes of <span class="mono">tools fetch failed</span> remain possible; inspect the actual reported validation error.</p>
             <h2>The stdio bridge does not start the server</h2>
             <ul class="section-list">
                 <li>Keep <span class="mono">BrowserCommander.McpStdioBridge.exe</span> and <span class="mono">BrowserCommanderServer.exe</span> in the same extracted folder.</li>
