@@ -285,6 +285,8 @@ dotnet run --project BrowserCommander.McpStdioBridge/BrowserCommander.McpStdioBr
 
 If no argument is passed, the bridge defaults to `http://localhost:5082/mcp`.
 
+The stdio bridge supports Claude Code as well as Codex and other MCP clients. It publishes tool output schemas and structured results according to the **downstream** client's negotiated MCP protocol version (including legacy `2025-11-25` clients), independently of the HTTP server's version. No client-specific tool switches or config changes are needed. Keep the original executable path, including a locally named `BrowserComander` folder if that is where it is installed.
+
 You can also override the upstream endpoint with:
 
 ```text
