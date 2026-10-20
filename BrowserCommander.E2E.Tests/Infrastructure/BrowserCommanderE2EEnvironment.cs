@@ -51,7 +51,7 @@ internal static class BrowserCommanderE2EEnvironment
         var currentPath = AppContext.BaseDirectory;
         while (!string.IsNullOrWhiteSpace(currentPath))
         {
-            var solutionPath = Path.Combine(currentPath, "BrowserComander.sln");
+            var solutionPath = Path.Combine(currentPath, "BrowserCommander.sln");
             if (File.Exists(solutionPath))
             {
                 return currentPath;

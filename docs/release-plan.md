@@ -159,7 +159,7 @@ This is the actual publication trigger.
 
 After the workflow succeeds, verify:
 
-1. `https://github.com/DimonSmart/BrowserComander/releases/latest` opens the new release.
+1. `https://github.com/DimonSmart/BrowserCommander/releases/latest` opens the new release.
 2. The release contains both zip files and `SHA256SUMS.txt`.
 3. The extension zip contains `manifest.json`.
 4. The portable zip contains:

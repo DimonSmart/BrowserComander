@@ -155,7 +155,7 @@ This means most future behavior changes should happen in the server-side plan bu
 ### 1. Build
 
 ```powershell
-dotnet build BrowserComander.sln
+dotnet build BrowserCommander.sln
 ```
 
 ### 2. Start the automation server
@@ -214,7 +214,7 @@ Detached startup logs are saved under the system temporary directory as `browser
 ### Verification
 
 ```sh
-dotnet build BrowserComander.sln
+dotnet build BrowserCommander.sln
 dotnet test BrowserCommanderServer.Tests/BrowserCommanderServer.Tests.csproj
 node --test scripts/background-agent.test.cjs
 ```
@@ -285,7 +285,7 @@ dotnet run --project BrowserCommander.McpStdioBridge/BrowserCommander.McpStdioBr
 
 If no argument is passed, the bridge defaults to `http://localhost:5082/mcp`.
 
-The stdio bridge supports Claude Code as well as Codex and other MCP clients. It publishes tool output schemas and structured results according to the **downstream** client's negotiated MCP protocol version (including legacy `2025-11-25` clients), independently of the HTTP server's version. No client-specific tool switches or config changes are needed. Keep the original executable path, including a locally named `BrowserComander` folder if that is where it is installed.
+The stdio bridge supports Claude Code as well as Codex and other MCP clients. It publishes tool output schemas and structured results according to the **downstream** client's negotiated MCP protocol version (including legacy `2025-11-25` clients), independently of the HTTP server's version. No client-specific tool switches or config changes are needed. Use the executable path that actually exists on your machine; renaming the GitHub repository does not rename existing local checkout folders.
 
 You can also override the upstream endpoint with:
 
@@ -300,11 +300,11 @@ command: dotnet
 args:
   run
   --project
-  C:\Private\BrowserComander\BrowserCommander.McpStdioBridge\BrowserCommander.McpStdioBridge.csproj
+  C:\Private\BrowserCommander\BrowserCommander.McpStdioBridge\BrowserCommander.McpStdioBridge.csproj
   --no-build
   --
   http://localhost:5082/mcp
-cwd: C:\Private\BrowserComander
+cwd: C:\Private\BrowserCommander
 ```
 
 ## Smoke checks

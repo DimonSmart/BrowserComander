@@ -18,11 +18,11 @@ jobs:
       - name: Background worker unit tests
         run: node --test scripts/background-agent.test.cjs
       - name: Build solution
-        run: dotnet build BrowserComander.sln -c Release
+        run: dotnet build BrowserCommander.sln -c Release
       - name: Unit tests
         run: dotnet test BrowserCommanderServer.Tests/BrowserCommanderServer.Tests.csproj -c Release --no-build
       - name: Build extension for Playwright
-        run: dotnet build BrowserComander.sln -c Debug
+        run: dotnet build BrowserCommander.sln -c Debug
       - name: Install Chromium for Playwright
         run: pwsh BrowserCommander.E2E.Tests/bin/Debug/net8.0/playwright.ps1 install --with-deps chromium
       - name: Run Playwright E2E tests
