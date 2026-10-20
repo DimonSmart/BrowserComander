@@ -4,6 +4,8 @@ using ModelContextProtocol.Protocol;
 
 namespace BrowserCommander.McpStdioBridge;
 
+public sealed record UpstreamToolResponse(CallToolResult Result, string? ProtocolVersion);
+
 public sealed class UpstreamMcpProxy : IAsyncDisposable
 {
     private readonly SemaphoreSlim _connectGate = new(1, 1);
@@ -20,14 +22,14 @@ public sealed class UpstreamMcpProxy : IAsyncDisposable
         _serverProcessManager = serverProcessManager;
     }
 
-    public async Task<CallToolResult> CallToolAsync(
+    public async Task<UpstreamToolResponse> CallToolAsync(
         CallToolRequestParams requestParams,
         CancellationToken cancellationToken)
     {
         var availability = await _serverProcessManager.EnsureEndpointAvailableAsync(cancellationToken);
         if (!availability.IsAvailable)
         {
-            return CreateUnavailableResult(availability.FailureMessage);
+            return new UpstreamToolResponse(CreateUnavailableResult(availability.FailureMessage), null);
         }
 
         try
@@ -45,8 +47,8 @@ public sealed class UpstreamMcpProxy : IAsyncDisposable
             availability = await _serverProcessManager.EnsureEndpointAvailableAsync(cancellationToken);
             if (!availability.IsAvailable)
             {
-                return CreateUnavailableResult(
-                    $"{availability.FailureMessage} Original error: {initialFailure.Message}");
+                return new UpstreamToolResponse(CreateUnavailableResult(
+                    $"{availability.FailureMessage} Original error: {initialFailure.Message}"), null);
             }
 
             try
@@ -63,8 +65,8 @@ public sealed class UpstreamMcpProxy : IAsyncDisposable
 
                 if (!await _serverProcessManager.IsEndpointReachableAsync(cancellationToken))
                 {
-                    return CreateUnavailableResult(
-                        $"Upstream MCP server '{_options.UpstreamEndpoint}' became unavailable. Last error: {retryFailure.Message}");
+                    return new UpstreamToolResponse(CreateUnavailableResult(
+                        $"Upstream MCP server '{_options.UpstreamEndpoint}' became unavailable. Last error: {retryFailure.Message}"), null);
                 }
 
                 throw;
@@ -116,12 +118,13 @@ public sealed class UpstreamMcpProxy : IAsyncDisposable
         }
     }
 
-    private async Task<CallToolResult> CallUpstreamAsync(
+    private async Task<UpstreamToolResponse> CallUpstreamAsync(
         CallToolRequestParams requestParams,
         CancellationToken cancellationToken)
     {
         var client = await GetClientAsync(cancellationToken);
-        return await client.CallToolAsync(requestParams, cancellationToken);
+        var result = await client.CallToolAsync(requestParams, cancellationToken);
+        return new UpstreamToolResponse(result, client.NegotiatedProtocolVersion);
     }
 
     private async Task ResetClientAsync()
