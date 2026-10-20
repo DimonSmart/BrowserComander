@@ -144,7 +144,9 @@ static async ValueTask<ListToolsResult> HandleListToolsAsync(
 
     return new ListToolsResult
     {
-        Tools = toolCatalog.Tools.ToList()
+        Tools = toolCatalog.Tools
+            .Select(tool => McpToolWireAdapter.AdaptTool(tool, requestContext.Server.NegotiatedProtocolVersion))
+            .ToList()
     };
 }
 
@@ -157,5 +159,11 @@ static async ValueTask<CallToolResult> HandleCallToolAsync(
     var requestParams = requestContext.Params
         ?? throw new InvalidOperationException("CallTool params are unavailable.");
     var proxy = services.GetRequiredService<UpstreamMcpProxy>();
-    return await proxy.CallToolAsync(requestParams, cancellationToken);
+    var catalog = services.GetRequiredService<BrowserCommanderToolCatalog>();
+    var naturalTool = catalog.Tools.FirstOrDefault(tool =>
+        string.Equals(tool.Name, requestParams.Name, StringComparison.Ordinal));
+    var upstream = await proxy.CallToolAsync(requestParams, cancellationToken);
+    return McpToolWireAdapter.AdaptResult(
+        naturalTool, upstream.Result, upstream.ProtocolVersion,
+        requestContext.Server.NegotiatedProtocolVersion);
 }
