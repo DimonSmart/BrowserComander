@@ -74,6 +74,18 @@ public sealed class McpToolWireAdapterTests
         Assert.Equal(actualUpstream, response.StructuredContent?.GetRawText());
     }
 
+    [Theory]
+    [InlineData("2025-11-25", "2025-11-25", "{\"result\":{\"result\":123}}")]
+    [InlineData("2025-11-25", "2026-07-28", "{\"result\":123}")]
+    public void NullableObjectFromLegacyUpstream_DoesNotMistakeDataForEnvelope(
+        string upstream, string downstream, string expected)
+    {
+        var tool = ToolWithSchema("{\"type\":[\"object\",\"null\"]}");
+        var source = Result("{\"result\":123}");
+        Assert.Equal(expected, McpToolWireAdapter.AdaptResult(
+            tool, source, upstream, downstream).StructuredContent?.GetRawText());
+    }
+
     [Fact]
     public void AbsentSchema_NeverInventsOutputSchema_ButLegacyContentIsObject()
     {
