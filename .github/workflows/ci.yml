@@ -30,10 +30,10 @@ jobs:
       - name: Install Chromium for Playwright
         run: pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
       - name: Run Playwright E2E tests
-        run: xvfb-run -a dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build --logger 'trx;LogFileName=e2e.trx'
+        run: dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build --logger 'trx;LogFileName=e2e.trx'
         env:
           BROWSER_COMMANDER_RUN_E2E: '1'
-          BROWSER_COMMANDER_E2E_HEADLESS: '0'
+          BROWSER_COMMANDER_E2E_HEADLESS: '1'
 
       - name: Assert required Blazor UI E2E ran without skips
         run: |
@@ -56,6 +56,11 @@ jobs:
           print(f'Required Blazor E2E: {len(required) - len(unexpected)} passed, {len(unexpected)} missing/failed/skipped')
           if unexpected:
               raise SystemExit(f'Required E2E checks did not pass: {unexpected}')
+          allowed_skip = 'LocatorDragTo_ExecutesRealMouseInteractionsAndValidation'
+          skipped = {name for name, outcome in actual.items() if outcome != 'Passed'}
+          if skipped - {allowed_skip}:
+              raise SystemExit(f'Unexpected skipped/failed E2E tests: {skipped - {allowed_skip}}')
+          print(f'Legacy headed-only test excluded in headless CI: {allowed_skip}' if allowed_skip in skipped else 'No headed-only exclusions')
           PY
       - name: Upload E2E diagnostics on failure
         if: failure()
