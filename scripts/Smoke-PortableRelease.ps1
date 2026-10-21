@@ -35,8 +35,8 @@ function Read-McpResponse {
         $line = [string]$read.Result
         try { $message = $line | ConvertFrom-Json -ErrorAction Stop }
         catch { throw "MCP bridge emitted non-JSON text on stdout: $line" }
-        if ($null -ne $message.id -and $message.id -eq $ExpectedId) {
-            if ($null -ne $message.error) { throw "MCP request $ExpectedId failed: $line" }
+        if ($message.PSObject.Properties['id'] -and $message.id -eq $ExpectedId) {
+            if ($message.PSObject.Properties['error'] -and $null -ne $message.error) { throw "MCP request $ExpectedId failed: $line" }
             return $message
         }
     }
@@ -98,7 +98,7 @@ try {
     $bridge.StandardInput.WriteLine('{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_list_viewport_presets","arguments":{}}}')
     $bridge.StandardInput.Flush()
     $call = Read-McpResponse -Process $bridge -ExpectedId 3
-    if ($null -eq $call.result -or $call.result.isError -eq $true) {
+    if ($null -eq $call.result -or ($call.result.PSObject.Properties['isError'] -and $call.result.isError -eq $true)) {
         throw 'Stdio MCP functional tools/call failed.'
     }
     Write-Host 'Published server (/whoami, /health, /mcp) and stdio bridge (initialize, tools/list, tools/call) smoke passed.'
