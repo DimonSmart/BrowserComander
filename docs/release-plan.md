@@ -71,7 +71,7 @@ Each release tag `vX.Y.Z` publishes exactly these files:
 - `scripts/build-release-assets.ps1`
   Builds the extension, publishes the server and stdio bridge, assembles the portable bundle, creates zip files, and writes `SHA256SUMS.txt`.
 - `scripts/Test-ReleaseBundle.ps1`
-  Verifies that the expected release files exist, checks the checksums, and inspects the zip contents.
+  Verifies checksums and extracted extension assets and runs Playwright Blazor UI tests against the extracted zip, plus a published Windows server/stdio bridge MCP smoke test. The verification must pass before GitHub Release is published.
 
 ## GitHub Actions responsibilities
 
@@ -161,8 +161,8 @@ After the workflow succeeds, verify:
 
 1. `https://github.com/DimonSmart/BrowserCommander/releases/latest` opens the new release.
 2. The release contains both zip files and `SHA256SUMS.txt`.
-3. The extension zip contains `manifest.json`.
-4. The portable zip contains:
+3. The extracted extension loads popup/options Blazor UI in Chromium and passes authorization/persistence UI tests.
+4. The portable Windows bundle starts server and stdio MCP tools from its extracted executables (with an isolated DOTNET_ROOT), and contains:
    - `BrowserCommanderServer.exe`
    - `BrowserCommander.McpStdioBridge.exe`
    - `README.txt`
@@ -186,3 +186,11 @@ Recommended manual smoke:
 - Public binaries are produced only by the release workflow from a tagged commit.
 - Pages is documentation-only. Do not upload binaries to the Pages site.
 - The release workflow is rerunnable for an existing tag because it updates assets with `--clobber`.
+
+## .NET 10 migration checks
+
+All six projects target `net10.0`; the SDK is selected using `global.json` (`10.0.201` with `latestFeature` roll-forward). Both CI and release workflows use `setup-dotnet` `global-json-file` and print `dotnet --info`.
+
+CI performs the existing JavaScript, .NET unit and full Chromium E2E suite; a Windows job also builds both release zips, verifies the generated MV3 manifest/CSP and referenced assets, runs the Blazor popup/options and tab authorization tests against the **extracted** extension, and invokes real stdio MCP tools via the extracted Windows executables. Release publication runs the same validation before uploading or publishing assets.
+
+Playwright traces, page screenshots and failure logs are uploaded on failure. A runtime-isolation smoke with `DOTNET_ROOT` pointing to a missing directory complements, but does not fully replace, testing on a clean Windows machine with no .NET installation.
