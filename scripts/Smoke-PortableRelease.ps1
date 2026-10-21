@@ -49,16 +49,21 @@ try {
     $serverInfo.UseShellExecute = $false
     $serverInfo.RedirectStandardOutput = $true
     $serverInfo.RedirectStandardError = $true
+    # Explicit command-line urls takes precedence over the shipped appsettings.json Urls=5082.
+    $serverInfo.ArgumentList.Add("--urls")
+    $serverInfo.ArgumentList.Add($baseUrl)
     $serverInfo.Environment['ASPNETCORE_URLS'] = $baseUrl
     $serverInfo.Environment['DOTNET_ROOT'] = Join-Path $PortableRoot '_missing-dotnet-runtime'
     $serverInfo.Environment['DOTNET_MULTILEVEL_LOOKUP'] = '0'
     $server = [System.Diagnostics.Process]::Start($serverInfo)
+    $serverStdout = $server.StandardOutput.ReadToEndAsync()
+    $serverStderr = $server.StandardError.ReadToEndAsync()
 
     $ready = $false
-    for ($i = 0; $i -lt 120; $i++) {
+    for ($i = 0; $i -lt 60; $i++) {
         if ($server.HasExited) { throw "Published server exited with code $($server.ExitCode)" }
         try {
-            $identity = Invoke-WebRequest -Uri "$baseUrl/whoami" -TimeoutSec 2 -UseBasicParsing
+            $identity = Invoke-WebRequest -Uri "$baseUrl/whoami" -TimeoutSec 1 -UseBasicParsing
             if ($identity.StatusCode -eq 200 -and
                 $identity.Headers['X-BrowserCommander-Service'] -eq 'BrowserCommanderServer') {
                 $ready = $true
@@ -67,7 +72,12 @@ try {
         }
         catch { Start-Sleep -Milliseconds 250 }
     }
-    if (-not $ready) { throw 'Published server did not serve /whoami in 30 seconds.' }
+    if (-not $ready) {
+        Write-Warning "Published server failed /whoami at $baseUrl; exit status: $(if ($server.HasExited) { $server.ExitCode } else { 'still running' })"
+        if ($serverStdout.IsCompleted) { Write-Warning ("Server stdout: " + $serverStdout.Result.Substring(0, [Math]::Min(3000, $serverStdout.Result.Length))) }
+        if ($serverStderr.IsCompleted) { Write-Warning ("Server stderr: " + $serverStderr.Result.Substring(0, [Math]::Min(3000, $serverStderr.Result.Length))) }
+        throw 'Published server did not serve /whoami on the configured port.'
+    }
     $health = Invoke-WebRequest -Uri "$baseUrl/health" -TimeoutSec 5 -UseBasicParsing
     if ($health.StatusCode -ne 200) { throw 'Published server /health failed.' }
 
