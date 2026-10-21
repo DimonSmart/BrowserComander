@@ -132,8 +132,12 @@ foreach ($icon in $manifest.icons.PSObject.Properties) {
     Assert-ExtensionAsset -RelativePath ([string]$icon.Value)
 }
 foreach ($scriptGroup in @($manifest.content_scripts)) {
-    foreach ($asset in @($scriptGroup.js, $scriptGroup.css)) {
-        if ($null -ne $asset) { Assert-ExtensionAsset -RelativePath $asset }
+    foreach ($property in @('js', 'css')) {
+        $entries = $scriptGroup.PSObject.Properties[$property]
+        if ($null -eq $entries) { continue }
+        foreach ($asset in @($entries.Value)) {
+            if ($null -ne $asset) { Assert-ExtensionAsset -RelativePath $asset }
+        }
     }
 }
 foreach ($pageName in @($manifest.action.default_popup, $manifest.options_ui.page)) {
