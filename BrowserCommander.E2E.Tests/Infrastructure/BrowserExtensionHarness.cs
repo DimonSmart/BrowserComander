@@ -138,22 +138,44 @@ internal sealed class BrowserExtensionHarness
     private static async Task<string> WaitForExtensionIdAsync(
         IBrowserContext context, CancellationToken cancellationToken)
     {
-        var timeoutAtUtc = DateTimeOffset.UtcNow.AddSeconds(30);
-        do
+        // Playwright .NET 1.58 does not expose BrowserContext.ServiceWorkers.
+        // CDP Target.getTargets lists the same MV3 service_worker targets in Chromium.
+        var discoveryPage = await context.NewPageAsync();
+        var cdp = await context.NewCDPSessionAsync(discoveryPage);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var worker = context.ServiceWorkers.FirstOrDefault(candidate =>
-                candidate.Url.StartsWith("chrome-extension://", StringComparison.Ordinal));
-            if (worker is not null)
+            var timeoutAtUtc = DateTimeOffset.UtcNow.AddSeconds(30);
+            do
             {
-                return new Uri(worker.Url).Host;
-            }
-            await Task.Delay(200, cancellationToken);
-        } while (DateTimeOffset.UtcNow < timeoutAtUtc);
+                cancellationToken.ThrowIfCancellationRequested();
+                var targets = await cdp.SendAsync("Target.getTargets");
+                if (targets is { } result && result.TryGetProperty("targetInfos", out var infos))
+                {
+                    foreach (var target in infos.EnumerateArray())
+                    {
+                        if (target.GetProperty("type").GetString() != "service_worker")
+                        {
+                            continue;
+                        }
+                        var url = target.GetProperty("url").GetString();
+                        if (url?.StartsWith("chrome-extension://", StringComparison.Ordinal) == true)
+                        {
+                            return new Uri(url).Host;
+                        }
+                    }
+                }
+                await Task.Delay(200, cancellationToken);
+            } while (DateTimeOffset.UtcNow < timeoutAtUtc);
 
-        throw new TimeoutException(
-            "Manifest V3 background service worker was not registered within 30 seconds. " +
-            $"Extension directory: '{BrowserCommanderE2EEnvironment.ExtensionPath}'.");
+            throw new TimeoutException(
+                "MV3 service worker was not found in Chromium CDP targets within 30 seconds. " +
+                $"Extension: '{BrowserCommanderE2EEnvironment.ExtensionPath}'.");
+        }
+        finally
+        {
+            await cdp.DetachAsync();
+            await discoveryPage.CloseAsync();
+        }
     }
 
     public async Task<int> GetTabIdAsync(IPage page)
