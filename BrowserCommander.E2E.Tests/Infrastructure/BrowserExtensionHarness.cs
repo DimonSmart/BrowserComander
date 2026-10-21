@@ -159,10 +159,7 @@ internal sealed class BrowserExtensionHarness
     public async Task<int> GetTabIdAsync(IPage page)
     {
         var result = await ExtensionPage.EvaluateAsync<int?>(
-            """async url => {
-              const tabs = await chrome.tabs.query({});
-              return tabs.find(tab => tab.url === url)?.id ?? null;
-            }""", page.Url);
+            "async url => { const tabs = await chrome.tabs.query({}); return tabs.find(tab => tab.url === url)?.id ?? null; }", page.Url);
         return result ?? throw new InvalidOperationException($"Target tab not found: {page.Url}");
     }
 
@@ -172,9 +169,9 @@ internal sealed class BrowserExtensionHarness
     {
         var id = await GetTabIdAsync(page);
         await ExtensionPage.EvaluateAsync(
-            """async id => { await chrome.tabs.update(id, { active: true }); }""", id);
+            "async id => { await chrome.tabs.update(id, { active: true }); }", id);
         var activeId = await ExtensionPage.EvaluateAsync<int?>(
-            """async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id ?? null""");
+            "async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id ?? null");
         if (activeId != id)
         {
             throw new InvalidOperationException($"Expected active tab #{id}, got #{activeId}.");
