@@ -222,7 +222,16 @@ dotnet test BrowserCommanderServer.Tests/BrowserCommanderServer.Tests.csproj
 node --test scripts/background-agent.test.cjs
 ```
 
-For Playwright integration tests, install the required Chromium browser, build the extension in Debug configuration, then use `BROWSER_COMMANDER_RUN_E2E=1` (and optionally `BROWSER_COMMANDER_E2E_HEADLESS=1`). They are not executed by the standard unit-test workflow unless explicitly enabled.
+For Playwright integration tests, build the solution in Debug mode and install the Playwright Chromium build:
+
+```powershell
+dotnet build BrowserCommander.sln -c Debug
+pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
+```
+
+Set `BROWSER_COMMANDER_RUN_E2E=1` before invoking `dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug`. Set `BROWSER_COMMANDER_E2E_HEADLESS=1` for headless Chromium; headed CI runs under a virtual display on Linux. GitHub Actions runs E2E automatically and fails if the three mandatory Blazor popup/options/authorization tests are absent, skipped or fail. Failures produce Playwright traces and screenshots in `artifacts/e2e`.
+
+To test an extracted release extension rather than `bin` output, set `BROWSER_COMMANDER_EXTENSION_PATH` to the directory containing its generated `manifest.json`.
 
 ## MCP transports
 
