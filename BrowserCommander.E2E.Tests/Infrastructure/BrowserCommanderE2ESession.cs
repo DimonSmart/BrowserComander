@@ -91,13 +91,22 @@ public sealed class BrowserCommanderE2ESession : IAsyncDisposable
         await Artifacts.WriteTextAsync("exception.txt", exception.ToString(), cancellationToken);
         await Artifacts.WriteTextAsync("server.log", Server.Logs.GetSnapshot(), cancellationToken);
 
-        var contentPages = Context.Pages
-            .Where(page => !page.Url.StartsWith("chrome-extension://", StringComparison.Ordinal))
-            .ToArray();
-
-        for (var index = 0; index < contentPages.Length; index++)
+        var pages = Context.Pages.ToArray();
+        for (var index = 0; index < pages.Length; index++)
         {
-            await Artifacts.CaptureScreenshotAsync(contentPages[index], $"page-{index + 1}.png", cancellationToken);
+            var page = pages[index];
+            var name = page.Url.StartsWith("chrome-extension://", StringComparison.Ordinal)
+                ? $"extension-{index + 1}.png"
+                : $"page-{index + 1}.png";
+            try
+            {
+                await Artifacts.CaptureScreenshotAsync(page, name, cancellationToken);
+            }
+            catch (Exception screenshotFailure)
+            {
+                await Artifacts.WriteTextAsync(
+                    $"screenshot-error-{index + 1}.txt", screenshotFailure.ToString(), cancellationToken);
+            }
         }
 
         await Context.Tracing.StopAsync(new TracingStopOptions
