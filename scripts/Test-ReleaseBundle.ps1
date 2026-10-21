@@ -111,6 +111,7 @@ function Assert-ExtensionAsset {
     if ([string]::IsNullOrWhiteSpace($RelativePath) -or $RelativePath.Contains('*')) { return }
     if ($RelativePath -match '^(?:https?:|data:|chrome:|//|#)') { return }
     $relative = ($RelativePath -split '[?#]', 2)[0].TrimStart('/')
+    if ($relative -eq '' -or $relative -eq '.') { return } # HTML <base href="/"> is a directory, not an asset.
     $target = [System.IO.Path]::GetFullPath((Join-Path $extensionRoot $relative))
     $prefix = $extensionRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
     if (-not $target.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
