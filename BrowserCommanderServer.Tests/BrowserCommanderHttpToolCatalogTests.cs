@@ -8,6 +8,24 @@ namespace BrowserCommanderServer.Tests;
 public sealed class BrowserCommanderHttpToolCatalogTests
 {
     [Fact]
+    public void ConnectionStatus_PublishesAnObjectSchemaWithTypedAgentProperties()
+    {
+        var catalog = new BrowserCommanderHttpToolCatalog(new McpToolPresentationOptions());
+        var schema = GetTool(catalog, "browser_connection_status").ProtocolTool.OutputSchema!.Value;
+
+        Assert.Equal(JsonValueKind.Object, schema.ValueKind);
+        Assert.Equal("object", schema.GetProperty("type").GetString());
+        var properties = schema.GetProperty("properties");
+        Assert.Equal("string", properties.GetProperty("serverInstanceId").GetProperty("type").GetString());
+        Assert.Equal("integer", properties.GetProperty("confirmedAgentCount").GetProperty("type").GetString());
+        var agents = properties.GetProperty("agents");
+        Assert.Equal("array", agents.GetProperty("type").GetString());
+        var agentProperties = agents.GetProperty("items").GetProperty("properties");
+        Assert.Equal("string", agentProperties.GetProperty("agentId").GetProperty("type").GetString());
+        Assert.Equal("integer", agentProperties.GetProperty("acknowledgedRevision").GetProperty("type").GetString());
+    }
+
+    [Fact]
     public void DefaultMode_PreservesToolReadOnlyHints()
     {
         var catalog = new BrowserCommanderHttpToolCatalog(new McpToolPresentationOptions());

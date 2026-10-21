@@ -61,12 +61,19 @@ public sealed class StdioMcpWireTests
             Assert.Contains("browser_list_pages", names);
             Assert.Contains("page_screenshot", names);
 
+            var connectionStatus = Assert.Single(tools,
+                tool => tool.GetProperty("name").GetString() == "browser_connection_status");
+            Assert.Equal("object", connectionStatus.GetProperty("outputSchema").GetProperty("type").GetString());
+            Assert.True(connectionStatus.GetProperty("outputSchema").GetProperty("properties")
+                .TryGetProperty("serverInstanceId", out _));
+
             foreach (var tool in tools)
             {
                 Assert.Equal("object", tool.GetProperty("inputSchema").GetProperty("type").GetString());
                 if (!tool.TryGetProperty("outputSchema", out var schema))
                     continue;
 
+                Assert.Equal(JsonValueKind.Object, schema.ValueKind);
                 if (revision == "2025-11-25")
                 {
                     Assert.Equal(JsonValueKind.Object, schema.ValueKind);

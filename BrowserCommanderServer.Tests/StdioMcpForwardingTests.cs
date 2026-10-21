@@ -85,6 +85,13 @@ public sealed class StdioMcpForwardingTests
                     data.ValueKind);
                 if (name == "browser_list_pages")
                     Assert.Empty(data.EnumerateArray());
+                else
+                {
+                    Assert.Equal("running", data.GetProperty("serverStatus").GetString());
+                    Assert.False(string.IsNullOrWhiteSpace(data.GetProperty("serverInstanceId").GetString()));
+                    Assert.Equal(0, data.GetProperty("confirmedAgentCount").GetInt32());
+                    Assert.Empty(data.GetProperty("agents").EnumerateArray());
+                }
             }
         }
         finally

@@ -22,26 +22,22 @@ public static class BrowserAutomationMcpTools
         OpenWorld = false,
         UseStructuredContent = true)]
     [Description("Diagnoses current connected browser sessions and their acknowledged authorization revisions.")]
-    public static object ConnectionStatus(IServiceProvider services)
+    public static BrowserConnectionStatus ConnectionStatus(IServiceProvider services)
     {
         var agents = GetAutomationService(services).GetAgents();
-        return new
-        {
-            serverInstanceId = ServerIdentity.InstanceId,
-            serverStatus = "running",
-            confirmedAgentCount = agents.Count,
-            authorizedTabCount = agents.Sum(agent => agent.Tabs.Count),
-            agents = agents.Select(agent => new
-            {
-                agentId = agent.AgentId,
-                browserName = agent.BrowserName,
-                extensionId = agent.ExtensionId,
-                acknowledgedRevision = agent.StateRevision,
-                connectionGeneration = agent.ConnectionGeneration,
-                authorizedTabCount = agent.Tabs.Count,
-                lastSynchronizedAtUtc = agent.LastSeenAtUtc
-            }).ToArray()
-        };
+        return new BrowserConnectionStatus(
+            ServerIdentity.InstanceId,
+            "running",
+            agents.Count,
+            agents.Sum(agent => agent.Tabs.Count),
+            agents.Select(agent => new BrowserConnectionAgentStatus(
+                agent.AgentId,
+                agent.BrowserName,
+                agent.ExtensionId,
+                agent.StateRevision,
+                agent.ConnectionGeneration,
+                agent.Tabs.Count,
+                agent.LastSeenAtUtc)).ToArray());
     }
 
     [McpServerTool(
