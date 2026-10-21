@@ -229,7 +229,7 @@ dotnet build BrowserCommander.sln -c Debug
 pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
 ```
 
-Set `BROWSER_COMMANDER_RUN_E2E=1` before invoking `dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug`. Set `BROWSER_COMMANDER_E2E_HEADLESS=1` for headless Chromium; headed CI runs under a virtual display on Linux. GitHub Actions runs E2E automatically and fails if the three mandatory Blazor popup/options/authorization tests are absent, skipped or fail. Failures produce Playwright traces and screenshots in `artifacts/e2e`.
+Set `BROWSER_COMMANDER_RUN_E2E=1` before invoking `dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug`. Set `BROWSER_COMMANDER_E2E_HEADLESS=1` for headless Chromium (the CI default). The legacy `LocatorDragTo_ExecutesRealMouseInteractionsAndValidation` scenario remains headed-only and is not run in headless CI; run it with a visible browser on a desktop to test real mouse drag/drop. GitHub Actions runs E2E automatically and fails if the three mandatory Blazor popup/options/authorization tests are absent, skipped or fail. Failures produce Playwright traces and screenshots in `artifacts/e2e`.
 
 To test an extracted release extension rather than `bin` output, set `BROWSER_COMMANDER_EXTENSION_PATH` to the directory containing its generated `manifest.json`.
 
