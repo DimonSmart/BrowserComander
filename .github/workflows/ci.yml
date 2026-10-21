@@ -64,3 +64,47 @@ jobs:
           name: browsercommander-e2e-diagnostics
           path: artifacts/e2e
           if-no-files-found: ignore
+
+  release-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Show selected SDK
+        run: dotnet --info
+      - name: Parse PowerShell release scripts
+        shell: pwsh
+        run: |
+          foreach ($file in @('scripts/build-release-assets.ps1', 'scripts/Test-ReleaseBundle.ps1', 'scripts/Smoke-PortableRelease.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { throw "PowerShell parse failed for $file : $($errors | Out-String)" }
+          }
+      - name: Build release assets without publishing
+        shell: pwsh
+        run: |
+          $version = (Get-Content BrowserCommander/wwwroot/manifest.json -Raw | ConvertFrom-Json).version
+          ./scripts/build-release-assets.ps1 -Version $version -OutputRoot artifacts/release
+      - name: Build release Playwright runner
+        shell: pwsh
+        run: dotnet build BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Release
+      - name: Install Chromium for release smoke
+        shell: pwsh
+        run: ./BrowserCommander.E2E.Tests/bin/Release/net10.0/playwright.ps1 install chromium
+      - name: Validate both extracted release archives
+        shell: pwsh
+        run: |
+          $version = (Get-Content BrowserCommander/wwwroot/manifest.json -Raw | ConvertFrom-Json).version
+          ./scripts/Test-ReleaseBundle.ps1 -Version $version -OutputRoot artifacts/release
+      - name: Upload Windows smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-smoke-diagnostics
+          path: |
+            artifacts/e2e
+            BrowserCommander.E2E.Tests/TestResults
+          if-no-files-found: ignore
