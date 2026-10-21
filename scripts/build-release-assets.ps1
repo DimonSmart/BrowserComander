@@ -105,6 +105,7 @@ Invoke-Dotnet -Arguments @(
     "-r", $RuntimeIdentifier,
     "--self-contained", "true",
     "/p:PublishSingleFile=true",
+    "/p:IncludeNativeLibrariesForSelfExtract=true",
     "-o", $serverPublishDir
 )
 
@@ -114,19 +115,29 @@ Invoke-Dotnet -Arguments @(
     "-r", $RuntimeIdentifier,
     "--self-contained", "true",
     "/p:PublishSingleFile=true",
+    "/p:IncludeNativeLibrariesForSelfExtract=true",
     "-o", $bridgePublishDir
 )
 
 Copy-DirectoryContent -SourcePath $extensionBuildDir -DestinationPath $extensionPackageDir
 Copy-DirectoryContent -SourcePath $serverPublishDir -DestinationPath $portableDir
 
-foreach ($bridgeFileName in @(
-    "BrowserCommander.McpStdioBridge.exe",
-    "BrowserCommander.McpStdioBridge.pdb"
-)) {
-    $bridgeFilePath = Join-Path $bridgePublishDir $bridgeFileName
-    if (Test-Path $bridgeFilePath) {
-        Copy-Item -LiteralPath $bridgeFilePath -Destination (Join-Path $portableDir $bridgeFileName) -Force
+# Preserve all native and runtime sidecars from both self-contained publish outputs.
+# A dependency omitted from the single-file bundle must not silently disappear.
+Get-ChildItem -LiteralPath $bridgePublishDir -File -Recurse | ForEach-Object {
+    $relativePath = [System.IO.Path]::GetRelativePath($bridgePublishDir, $_.FullName)
+    $targetPath = Join-Path $portableDir $relativePath
+    $targetFolder = Split-Path -Parent $targetPath
+    New-Item -ItemType Directory -Path $targetFolder -Force | Out-Null
+    if (Test-Path -LiteralPath $targetPath) {
+        $existingHash = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256).Hash
+        $newHash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        if ($existingHash -ne $newHash) {
+            throw "Server/bridge published dependencies conflict at '$relativePath'."
+        }
+    }
+    else {
+        Copy-Item -LiteralPath $_.FullName -Destination $targetPath -Force
     }
 }
 
