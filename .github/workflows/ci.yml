@@ -30,11 +30,33 @@ jobs:
       - name: Install Chromium for Playwright
         run: pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
       - name: Run Playwright E2E tests
-        run: xvfb-run -a dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build
+        run: xvfb-run -a dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build --logger 'trx;LogFileName=e2e.trx'
         env:
           BROWSER_COMMANDER_RUN_E2E: '1'
           BROWSER_COMMANDER_E2E_HEADLESS: '0'
 
+      - name: Assert required Blazor UI E2E ran without skips
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          results = list(Path('BrowserCommander.E2E.Tests').rglob('TestResults/e2e.trx'))
+          if len(results) != 1:
+              raise SystemExit(f'Expected exactly one e2e.trx, got {results}')
+          root = ET.parse(results[0]).getroot()
+          actual = {r.attrib['testName'].split('.')[-1]: r.attrib['outcome']
+                    for r in root.iter() if r.tag.endswith('UnitTestResult')}
+          required = [
+              'Popup_RendersBlazor_WithoutRuntimeOrResourceFailures',
+              'Options_SaveFromBlazorUi_PersistsAfterReload',
+              'Popup_AuthorizeAndRevoke_UsesTheActualActiveHttpTab'
+          ]
+          unexpected = {name: actual.get(name, 'MISSING') for name in required
+                        if actual.get(name) != 'Passed'}
+          print(f'Required Blazor E2E: {len(required) - len(unexpected)} passed, {len(unexpected)} missing/failed/skipped')
+          if unexpected:
+              raise SystemExit(f'Required E2E checks did not pass: {unexpected}')
+          PY
       - name: Upload E2E diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
