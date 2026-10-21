@@ -168,6 +168,35 @@ Assert-DirectoryExists -Path $configExamplesDir -Description "Portable config ex
 Assert-FileExists -Path (Join-Path $configExamplesDir "codex-stdio.example.json") -Description "Codex stdio config example"
 Assert-FileExists -Path (Join-Path $configExamplesDir "http-mcp.example.txt") -Description "HTTP MCP config example"
 
+
+# The release gate tests the extracted ZIP, not the extension's build output.
+$testProject = Join-Path $repoRoot 'BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj'
+$env:BROWSER_COMMANDER_EXTENSION_PATH = $extensionRoot
+$env:BROWSER_COMMANDER_RUN_E2E = '1'
+$env:BROWSER_COMMANDER_E2E_HEADLESS = '1'
+try {
+    & dotnet test $testProject -c Release --no-build --filter 'FullyQualifiedName~BlazorExtensionUiE2ETests' --logger 'trx;LogFileName=release-ui.trx'
+    if ($LASTEXITCODE -ne 0) { throw 'Release Blazor UI E2E smoke tests failed.' }
+
+    $testResultsDir = Join-Path $repoRoot 'BrowserCommander.E2E.Tests/TestResults'
+    $trxPaths = @(Get-ChildItem -Path $testResultsDir -Recurse -File -Filter 'release-ui.trx')
+    if ($trxPaths.Count -ne 1) { throw "Expected one release-ui.trx, got $($trxPaths.Count)." }
+    [xml]$trx = Get-Content -LiteralPath $trxPaths[0].FullName -Raw
+    $cases = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
+    $requiredCases = @($cases | Where-Object { $_.testName -match 'BlazorExtensionUiE2ETests' })
+    $nonPassing = @($requiredCases | Where-Object { $_.outcome -ne 'Passed' })
+    if ($requiredCases.Count -ne 3 -or $nonPassing.Count -gt 0) {
+        throw "Expected three passed release Blazor UI tests, got $($requiredCases.Count) and $($nonPassing.Count) nonpassing."
+    }
+}
+finally {
+    Remove-Item Env:BROWSER_COMMANDER_EXTENSION_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:BROWSER_COMMANDER_RUN_E2E -ErrorAction SilentlyContinue
+    Remove-Item Env:BROWSER_COMMANDER_E2E_HEADLESS -ErrorAction SilentlyContinue
+}
+
+& (Join-Path $PSScriptRoot 'Smoke-PortableRelease.ps1') -PortableRoot $portableRoot
+
 Write-Host "Release bundle validation passed for version $Version."
 Write-Host " - $extensionZipPath"
 Write-Host " - $portableZipPath"
