@@ -57,12 +57,30 @@ jobs:
             -Version "${{ steps.version.outputs.value }}" `
             -OutputRoot "artifacts\release"
 
+      - name: Build Playwright release smoke runner
+        shell: pwsh
+        run: dotnet build BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Release
+
+      - name: Install Playwright Chromium for release extension smoke
+        shell: pwsh
+        run: .\BrowserCommander.E2E.Tests\bin\Release\net10.0\playwright.ps1 install chromium
+
       - name: Validate release bundle
         shell: pwsh
         run: |
           .\scripts\Test-ReleaseBundle.ps1 `
             -Version "${{ steps.version.outputs.value }}" `
             -OutputRoot "artifacts\release"
+
+      - name: Upload release validation diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validation-diagnostics
+          path: |
+            artifacts/e2e
+            BrowserCommander.E2E.Tests/TestResults
+          if-no-files-found: ignore
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
