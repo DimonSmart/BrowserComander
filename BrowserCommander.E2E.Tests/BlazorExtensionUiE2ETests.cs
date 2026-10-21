@@ -29,6 +29,9 @@ public sealed class BlazorExtensionUiE2ETests : BrowserCommanderE2ETestBase
         {
             var (options, errors) = await OpenUiPageAsync(session, "options.html", "#commandTimeout");
             Assert.Equal("Extension settings", await options.Locator("h1").InnerTextAsync());
+            await options.WaitForFunctionAsync(
+                "() => Number(document.querySelector('#commandTimeout')?.value) > 0 && " +
+                "document.querySelector('#serverAddress')?.value?.startsWith('http')");
             var serverInput = options.Locator("#serverAddress");
             var initialAddress = await serverInput.InputValueAsync();
             var timeoutInput = options.Locator("#commandTimeout");
