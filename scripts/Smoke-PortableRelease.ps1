@@ -82,7 +82,7 @@ try {
     $bridgeInfo.Environment['DOTNET_MULTILEVEL_LOOKUP'] = '0'
     $bridge = [System.Diagnostics.Process]::Start($bridgeInfo)
 
-    $bridge.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1.0"}}}')
+    $bridge.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1.0"}}}')
     $bridge.StandardInput.Flush()
     $init = Read-McpResponse -Process $bridge -ExpectedId 1
     if ($null -eq $init.result.serverInfo) { throw 'Stdio initialize did not return serverInfo.' }
