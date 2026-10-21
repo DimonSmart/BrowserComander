@@ -154,6 +154,9 @@ This means most future behavior changes should happen in the server-side plan bu
 
 ### 1. Build
 
+Install the .NET 10 SDK specified by `global.json` (10.0.201 with `latestFeature` roll-forward). Use `dotnet --info` to inspect the selected SDK.
+
+
 ```powershell
 dotnet build BrowserCommander.sln
 ```
@@ -175,7 +178,7 @@ http://localhost:5082/mcp
 Load the unpacked extension from:
 
 ```text
-BrowserCommander/bin/Debug/net8.0/browserextension
+BrowserCommander/bin/Debug/net10.0/browserextension
 ```
 
 ### 4. Authorize the current tab

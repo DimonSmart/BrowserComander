@@ -44,7 +44,7 @@ Nothing from the server, bridge, or extension binaries goes to Pages.
 Each release tag `vX.Y.Z` publishes exactly these files:
 
 - `browsercommander-extension-unpacked-vX.Y.Z.zip`
-  Contains the unpacked browser extension build from `BrowserCommander/bin/Release/net8.0/browserextension`.
+  Contains the unpacked browser extension build from `BrowserCommander/bin/Release/net10.0/browserextension`.
 - `browsercommander-windows-x64-portable-vX.Y.Z.zip`
   Contains:
   - `BrowserCommanderServer.exe`

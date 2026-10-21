@@ -3,7 +3,8 @@ const os = require('os');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const extensionPath = path.resolve(__dirname, '..', 'BrowserCommander', 'bin', 'Debug', 'net8.0', 'browserextension');
+const extensionPath = path.resolve(process.env.BROWSER_COMMANDER_EXTENSION_PATH ?? path.join(__dirname, '..', 'BrowserCommander', 'bin', 'Debug', 'net10.0', 'browserextension'));
+if (!fs.existsSync(path.join(extensionPath, 'manifest.json'))) throw new Error(`Missing extension manifest: ${extensionPath}`);
 const smokeUrl = process.env.BROWSER_COMMANDER_SMOKE_URL ?? 'http://127.0.0.1:8765/';
 const automationApiBase = process.env.BROWSER_COMMANDER_API_BASE ?? 'http://localhost:5082/api/browser-automation';
 const iPhone12ProPortrait = { width: 390, height: 844 };

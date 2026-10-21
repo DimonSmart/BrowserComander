@@ -4,6 +4,7 @@ internal static class BrowserCommanderE2EEnvironment
 {
     private const string RunFlag = "BROWSER_COMMANDER_RUN_E2E";
     private const string HeadlessFlag = "BROWSER_COMMANDER_E2E_HEADLESS";
+    private const string ExtensionPathOverride = "BROWSER_COMMANDER_EXTENSION_PATH";
 
     private static readonly Lazy<string> RepositoryRootPathValue = new(ResolveRepositoryRootPath);
 
@@ -14,12 +15,14 @@ internal static class BrowserCommanderE2EEnvironment
     public static string RepositoryRootPath => RepositoryRootPathValue.Value;
 
     public static string ExtensionPath =>
-        Path.Combine(
+        Environment.GetEnvironmentVariable(ExtensionPathOverride) is { Length: > 0 } overridePath
+            ? Path.GetFullPath(overridePath)
+            : Path.Combine(
             RepositoryRootPath,
             "BrowserCommander",
             "bin",
             "Debug",
-            "net8.0",
+            "net10.0",
             "browserextension");
 
     public static string TestSiteRootPath =>
