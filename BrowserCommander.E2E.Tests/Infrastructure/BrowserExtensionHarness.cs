@@ -41,25 +41,46 @@ internal sealed class BrowserExtensionHarness
             $"browsercommander-e2e-{Guid.NewGuid():N}");
         Directory.CreateDirectory(userDataDirectoryPath);
 
-        var context = await playwright.Chromium.LaunchPersistentContextAsync(
-            userDataDirectoryPath,
-            new BrowserTypeLaunchPersistentContextOptions
+        IBrowserContext? context = null;
+        try
+        {
+            context = await playwright.Chromium.LaunchPersistentContextAsync(
+                userDataDirectoryPath,
+                new BrowserTypeLaunchPersistentContextOptions
+                {
+                    Channel = "chromium",
+                    Headless = BrowserCommanderE2EEnvironment.IsHeadless,
+                    Args =
+                    [
+                        $"--disable-extensions-except={BrowserCommanderE2EEnvironment.ExtensionPath}",
+                        $"--load-extension={BrowserCommanderE2EEnvironment.ExtensionPath}"
+                    ]
+                });
+
+            // Manifest V3 does not automatically open an extension page.
+            var extensionId = await WaitForExtensionIdAsync(context, cancellationToken);
+            var extensionPage = await context.NewPageAsync();
+            await extensionPage.GotoAsync($"chrome-extension://{extensionId}/index.html");
+            var harness = new BrowserExtensionHarness(userDataDirectoryPath, context, extensionPage, extensionId);
+            var settings = await harness.SetServerAddressAsync(serverBaseUri);
+            if (!settings.Ok)
             {
-                Channel = "chromium",
-                Headless = BrowserCommanderE2EEnvironment.IsHeadless,
-                Args =
-                [
-                    $"--disable-extensions-except={BrowserCommanderE2EEnvironment.ExtensionPath}",
-                    $"--load-extension={BrowserCommanderE2EEnvironment.ExtensionPath}"
-                ]
-            });
-
-        var extensionPage = await WaitForExtensionPageAsync(context, cancellationToken);
-        var extensionId = new Uri(extensionPage.Url).Host;
-
-        var harness = new BrowserExtensionHarness(userDataDirectoryPath, context, extensionPage, extensionId);
-        await harness.SetServerAddressAsync(serverBaseUri);
-        return harness;
+                throw new InvalidOperationException($"Extension settings failed: {settings.Error}");
+            }
+            return harness;
+        }
+        catch
+        {
+            if (context is not null)
+            {
+                await context.CloseAsync();
+            }
+            if (Directory.Exists(userDataDirectoryPath))
+            {
+                Directory.Delete(userDataDirectoryPath, recursive: true);
+            }
+            throw;
+        }
     }
 
     public Task<BrowserExtensionStatus> SetServerAddressAsync(Uri serverBaseUri)
@@ -92,11 +113,16 @@ internal sealed class BrowserExtensionHarness
 
     public async Task DisposeAsync()
     {
-        await Context.CloseAsync();
-
-        if (Directory.Exists(UserDataDirectoryPath))
+        try
         {
-            Directory.Delete(UserDataDirectoryPath, recursive: true);
+            await Context.CloseAsync();
+        }
+        finally
+        {
+            if (Directory.Exists(UserDataDirectoryPath))
+            {
+                Directory.Delete(UserDataDirectoryPath, recursive: true);
+            }
         }
     }
 
@@ -109,25 +135,50 @@ internal sealed class BrowserExtensionHarness
         return Deserialize<T>(response);
     }
 
-    private static async Task<IPage> WaitForExtensionPageAsync(IBrowserContext context, CancellationToken cancellationToken)
+    private static async Task<string> WaitForExtensionIdAsync(
+        IBrowserContext context, CancellationToken cancellationToken)
     {
         var timeoutAtUtc = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < timeoutAtUtc)
+        do
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            var extensionPage = context.Pages
-                .FirstOrDefault(candidate => candidate.Url.StartsWith("chrome-extension://", StringComparison.Ordinal));
-
-            if (extensionPage is not null)
+            var worker = context.ServiceWorkers.FirstOrDefault(candidate =>
+                candidate.Url.StartsWith("chrome-extension://", StringComparison.Ordinal));
+            if (worker is not null)
             {
-                return extensionPage;
+                return new Uri(worker.Url).Host;
             }
-
             await Task.Delay(200, cancellationToken);
-        }
+        } while (DateTimeOffset.UtcNow < timeoutAtUtc);
 
-        throw new TimeoutException("Timed out waiting for the BrowserCommander extension page.");
+        throw new TimeoutException(
+            "Manifest V3 background service worker was not registered within 30 seconds. " +
+            $"Extension directory: '{BrowserCommanderE2EEnvironment.ExtensionPath}'.");
+    }
+
+    public async Task<int> GetTabIdAsync(IPage page)
+    {
+        var result = await ExtensionPage.EvaluateAsync<int?>(
+            """async url => {
+              const tabs = await chrome.tabs.query({});
+              return tabs.find(tab => tab.url === url)?.id ?? null;
+            }""", page.Url);
+        return result ?? throw new InvalidOperationException($"Target tab not found: {page.Url}");
+    }
+
+    // Keep the HTTP tab active when Blazor loads popup.html in a separate extension tab.
+    // The popup's Tabs.Query(active, currentWindow) must resolve the original user tab.
+    public async Task ActivateTabAsync(IPage page)
+    {
+        var id = await GetTabIdAsync(page);
+        await ExtensionPage.EvaluateAsync(
+            """async id => { await chrome.tabs.update(id, { active: true }); }""", id);
+        var activeId = await ExtensionPage.EvaluateAsync<int?>(
+            """async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id ?? null""");
+        if (activeId != id)
+        {
+            throw new InvalidOperationException($"Expected active tab #{id}, got #{activeId}.");
+        }
     }
 
     private static T Deserialize<T>(JsonElement element)
