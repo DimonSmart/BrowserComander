@@ -141,7 +141,7 @@ public sealed class StdioMcpWireTests
         while (directory is not null)
         {
             var candidate = Path.Combine(directory.FullName,
-                "BrowserCommander.McpStdioBridge", "bin", config, "net8.0",
+                "BrowserCommander.McpStdioBridge", "bin", config, "net10.0",
                 "BrowserCommander.McpStdioBridge.dll");
             if (File.Exists(candidate))
                 return candidate;

@@ -146,7 +146,7 @@ public sealed class StdioMcpForwardingTests
         while (directory is not null)
         {
             var binary = Path.Combine(directory.FullName, project, "bin",
-                configuration, "net8.0", project + ".dll");
+                configuration, "net10.0", project + ".dll");
             if (File.Exists(binary))
                 return binary;
             directory = directory.Parent;

@@ -12,7 +12,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+      - name: Show selected SDK
+        run: dotnet --info
+      - name: Restore solution
+        run: dotnet restore BrowserCommander.sln
       - name: Validate extension JavaScript syntax
         run: node --check BrowserCommander/wwwroot/background-agent.js
       - name: Background worker unit tests
@@ -24,9 +28,88 @@ jobs:
       - name: Build extension for Playwright
         run: dotnet build BrowserCommander.sln -c Debug
       - name: Install Chromium for Playwright
-        run: pwsh BrowserCommander.E2E.Tests/bin/Debug/net8.0/playwright.ps1 install --with-deps chromium
+        run: pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
       - name: Run Playwright E2E tests
-        run: dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build
+        run: dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug --no-build --logger 'trx;LogFileName=e2e.trx'
         env:
           BROWSER_COMMANDER_RUN_E2E: '1'
           BROWSER_COMMANDER_E2E_HEADLESS: '1'
+
+      - name: Assert required Blazor UI E2E ran without skips
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          results = list(Path('BrowserCommander.E2E.Tests').rglob('TestResults/e2e.trx'))
+          if len(results) != 1:
+              raise SystemExit(f'Expected exactly one e2e.trx, got {results}')
+          root = ET.parse(results[0]).getroot()
+          actual = {r.attrib['testName'].split('.')[-1]: r.attrib['outcome']
+                    for r in root.iter() if r.tag.endswith('UnitTestResult')}
+          required = [
+              'Popup_RendersBlazor_WithoutRuntimeOrResourceFailures',
+              'Options_SaveFromBlazorUi_PersistsAfterReload',
+              'Popup_AuthorizeAndRevoke_UsesTheActualActiveHttpTab'
+          ]
+          unexpected = {name: actual.get(name, 'MISSING') for name in required
+                        if actual.get(name) != 'Passed'}
+          print(f'Required Blazor E2E: {len(required) - len(unexpected)} passed, {len(unexpected)} missing/failed/skipped')
+          if unexpected:
+              raise SystemExit(f'Required E2E checks did not pass: {unexpected}')
+          allowed_skip = 'LocatorDragTo_ExecutesRealMouseInteractionsAndValidation'
+          skipped = {name for name, outcome in actual.items() if outcome != 'Passed'}
+          if skipped - {allowed_skip}:
+              raise SystemExit(f'Unexpected skipped/failed E2E tests: {skipped - {allowed_skip}}')
+          print(f'Legacy headed-only test excluded in headless CI: {allowed_skip}' if allowed_skip in skipped else 'No headed-only exclusions')
+          PY
+      - name: Upload E2E diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browsercommander-e2e-diagnostics
+          path: artifacts/e2e
+          if-no-files-found: ignore
+
+  release-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Show selected SDK
+        run: dotnet --info
+      - name: Parse PowerShell release scripts
+        shell: pwsh
+        run: |
+          foreach ($file in @('scripts/build-release-assets.ps1', 'scripts/Test-ReleaseBundle.ps1', 'scripts/Smoke-PortableRelease.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { throw "PowerShell parse failed for $file : $($errors | Out-String)" }
+          }
+      - name: Build release assets without publishing
+        shell: pwsh
+        run: |
+          $version = (Get-Content BrowserCommander/wwwroot/manifest.json -Raw | ConvertFrom-Json).version
+          ./scripts/build-release-assets.ps1 -Version $version -OutputRoot artifacts/release
+      - name: Build release Playwright runner
+        shell: pwsh
+        run: dotnet build BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Release
+      - name: Install Chromium for release smoke
+        shell: pwsh
+        run: ./BrowserCommander.E2E.Tests/bin/Release/net10.0/playwright.ps1 install chromium
+      - name: Validate both extracted release archives
+        shell: pwsh
+        run: |
+          $version = (Get-Content BrowserCommander/wwwroot/manifest.json -Raw | ConvertFrom-Json).version
+          ./scripts/Test-ReleaseBundle.ps1 -Version $version -OutputRoot artifacts/release
+      - name: Upload Windows smoke diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-smoke-diagnostics
+          path: |
+            artifacts/e2e
+            BrowserCommander.E2E.Tests/TestResults
+          if-no-files-found: ignore

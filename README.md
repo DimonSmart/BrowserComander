@@ -154,6 +154,9 @@ This means most future behavior changes should happen in the server-side plan bu
 
 ### 1. Build
 
+Install the .NET 10 SDK specified by `global.json` (10.0.201 with `latestFeature` roll-forward). Use `dotnet --info` to inspect the selected SDK.
+
+
 ```powershell
 dotnet build BrowserCommander.sln
 ```
@@ -175,7 +178,7 @@ http://localhost:5082/mcp
 Load the unpacked extension from:
 
 ```text
-BrowserCommander/bin/Debug/net8.0/browserextension
+BrowserCommander/bin/Debug/net10.0/browserextension
 ```
 
 ### 4. Authorize the current tab
@@ -219,7 +222,16 @@ dotnet test BrowserCommanderServer.Tests/BrowserCommanderServer.Tests.csproj
 node --test scripts/background-agent.test.cjs
 ```
 
-For Playwright integration tests, install the required Chromium browser, build the extension in Debug configuration, then use `BROWSER_COMMANDER_RUN_E2E=1` (and optionally `BROWSER_COMMANDER_E2E_HEADLESS=1`). They are not executed by the standard unit-test workflow unless explicitly enabled.
+For Playwright integration tests, build the solution in Debug mode and install the Playwright Chromium build:
+
+```powershell
+dotnet build BrowserCommander.sln -c Debug
+pwsh BrowserCommander.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium
+```
+
+Set `BROWSER_COMMANDER_RUN_E2E=1` before invoking `dotnet test BrowserCommander.E2E.Tests/BrowserCommander.E2E.Tests.csproj -c Debug`. Set `BROWSER_COMMANDER_E2E_HEADLESS=1` for headless Chromium (the CI default). The legacy `LocatorDragTo_ExecutesRealMouseInteractionsAndValidation` scenario remains headed-only and is not run in headless CI; run it with a visible browser on a desktop to test real mouse drag/drop. GitHub Actions runs E2E automatically and fails if the three mandatory Blazor popup/options/authorization tests are absent, skipped or fail. Failures produce Playwright traces and screenshots in `artifacts/e2e`.
+
+To test an extracted release extension rather than `bin` output, set `BROWSER_COMMANDER_EXTENSION_PATH` to the directory containing its generated `manifest.json`.
 
 ## MCP transports
 

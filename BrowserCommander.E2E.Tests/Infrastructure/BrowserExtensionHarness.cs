@@ -41,25 +41,46 @@ internal sealed class BrowserExtensionHarness
             $"browsercommander-e2e-{Guid.NewGuid():N}");
         Directory.CreateDirectory(userDataDirectoryPath);
 
-        var context = await playwright.Chromium.LaunchPersistentContextAsync(
-            userDataDirectoryPath,
-            new BrowserTypeLaunchPersistentContextOptions
+        IBrowserContext? context = null;
+        try
+        {
+            context = await playwright.Chromium.LaunchPersistentContextAsync(
+                userDataDirectoryPath,
+                new BrowserTypeLaunchPersistentContextOptions
+                {
+                    Channel = "chromium",
+                    Headless = BrowserCommanderE2EEnvironment.IsHeadless,
+                    Args =
+                    [
+                        $"--disable-extensions-except={BrowserCommanderE2EEnvironment.ExtensionPath}",
+                        $"--load-extension={BrowserCommanderE2EEnvironment.ExtensionPath}"
+                    ]
+                });
+
+            // Manifest V3 does not automatically open an extension page.
+            var extensionId = await WaitForExtensionIdAsync(context, cancellationToken);
+            var extensionPage = await context.NewPageAsync();
+            await extensionPage.GotoAsync($"chrome-extension://{extensionId}/index.html");
+            var harness = new BrowserExtensionHarness(userDataDirectoryPath, context, extensionPage, extensionId);
+            var settings = await harness.SetServerAddressAsync(serverBaseUri);
+            if (!settings.Ok)
             {
-                Channel = "chromium",
-                Headless = BrowserCommanderE2EEnvironment.IsHeadless,
-                Args =
-                [
-                    $"--disable-extensions-except={BrowserCommanderE2EEnvironment.ExtensionPath}",
-                    $"--load-extension={BrowserCommanderE2EEnvironment.ExtensionPath}"
-                ]
-            });
-
-        var extensionPage = await WaitForExtensionPageAsync(context, cancellationToken);
-        var extensionId = new Uri(extensionPage.Url).Host;
-
-        var harness = new BrowserExtensionHarness(userDataDirectoryPath, context, extensionPage, extensionId);
-        await harness.SetServerAddressAsync(serverBaseUri);
-        return harness;
+                throw new InvalidOperationException($"Extension settings failed: {settings.Error}");
+            }
+            return harness;
+        }
+        catch
+        {
+            if (context is not null)
+            {
+                await context.CloseAsync();
+            }
+            if (Directory.Exists(userDataDirectoryPath))
+            {
+                Directory.Delete(userDataDirectoryPath, recursive: true);
+            }
+            throw;
+        }
     }
 
     public Task<BrowserExtensionStatus> SetServerAddressAsync(Uri serverBaseUri)
@@ -92,11 +113,16 @@ internal sealed class BrowserExtensionHarness
 
     public async Task DisposeAsync()
     {
-        await Context.CloseAsync();
-
-        if (Directory.Exists(UserDataDirectoryPath))
+        try
         {
-            Directory.Delete(UserDataDirectoryPath, recursive: true);
+            await Context.CloseAsync();
+        }
+        finally
+        {
+            if (Directory.Exists(UserDataDirectoryPath))
+            {
+                Directory.Delete(UserDataDirectoryPath, recursive: true);
+            }
         }
     }
 
@@ -109,25 +135,69 @@ internal sealed class BrowserExtensionHarness
         return Deserialize<T>(response);
     }
 
-    private static async Task<IPage> WaitForExtensionPageAsync(IBrowserContext context, CancellationToken cancellationToken)
+    private static async Task<string> WaitForExtensionIdAsync(
+        IBrowserContext context, CancellationToken cancellationToken)
     {
-        var timeoutAtUtc = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < timeoutAtUtc)
+        // Playwright .NET 1.58 does not expose BrowserContext.ServiceWorkers.
+        // CDP Target.getTargets lists the same MV3 service_worker targets in Chromium.
+        var discoveryPage = await context.NewPageAsync();
+        var cdp = await context.NewCDPSessionAsync(discoveryPage);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var extensionPage = context.Pages
-                .FirstOrDefault(candidate => candidate.Url.StartsWith("chrome-extension://", StringComparison.Ordinal));
-
-            if (extensionPage is not null)
+            var timeoutAtUtc = DateTimeOffset.UtcNow.AddSeconds(30);
+            do
             {
-                return extensionPage;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var targets = await cdp.SendAsync("Target.getTargets");
+                if (targets is { } result && result.TryGetProperty("targetInfos", out var infos))
+                {
+                    foreach (var target in infos.EnumerateArray())
+                    {
+                        if (target.GetProperty("type").GetString() != "service_worker")
+                        {
+                            continue;
+                        }
+                        var url = target.GetProperty("url").GetString();
+                        if (url?.StartsWith("chrome-extension://", StringComparison.Ordinal) == true)
+                        {
+                            return new Uri(url).Host;
+                        }
+                    }
+                }
+                await Task.Delay(200, cancellationToken);
+            } while (DateTimeOffset.UtcNow < timeoutAtUtc);
 
-            await Task.Delay(200, cancellationToken);
+            throw new TimeoutException(
+                "MV3 service worker was not found in Chromium CDP targets within 30 seconds. " +
+                $"Extension: '{BrowserCommanderE2EEnvironment.ExtensionPath}'.");
         }
+        finally
+        {
+            await cdp.DetachAsync();
+            await discoveryPage.CloseAsync();
+        }
+    }
 
-        throw new TimeoutException("Timed out waiting for the BrowserCommander extension page.");
+    public async Task<int> GetTabIdAsync(IPage page)
+    {
+        var result = await ExtensionPage.EvaluateAsync<int?>(
+            "async url => { const tabs = await chrome.tabs.query({}); return tabs.find(tab => tab.url === url)?.id ?? null; }", page.Url);
+        return result ?? throw new InvalidOperationException($"Target tab not found: {page.Url}");
+    }
+
+    // Keep the HTTP tab active when Blazor loads popup.html in a separate extension tab.
+    // The popup's Tabs.Query(active, currentWindow) must resolve the original user tab.
+    public async Task ActivateTabAsync(IPage page)
+    {
+        var id = await GetTabIdAsync(page);
+        await ExtensionPage.EvaluateAsync(
+            "async id => { await chrome.tabs.update(id, { active: true }); }", id);
+        var activeId = await ExtensionPage.EvaluateAsync<int?>(
+            "async () => (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id ?? null");
+        if (activeId != id)
+        {
+            throw new InvalidOperationException($"Expected active tab #{id}, got #{activeId}.");
+        }
     }
 
     private static T Deserialize<T>(JsonElement element)
